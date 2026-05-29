@@ -6,7 +6,7 @@ import AdminLog from '../models/AdminLog.js';
 import CommunityPost from '../models/CommunityPost.js';
 import { invalidateCache } from '../utils/cache.js';
 
-const logAction = async (
+export const logAction = async (
   adminId: string,
   action: string,
   targetId?: string | null,

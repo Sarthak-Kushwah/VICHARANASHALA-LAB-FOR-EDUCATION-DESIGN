@@ -1,15 +1,12 @@
 import jwt from 'jsonwebtoken';
 import { Request, Response, NextFunction } from 'express';
-import User, { IUser } from '../models/User.js';
+import User, { type UserRole } from '../models/User.js';
+import '../types/express.js'; // picks up the global Request interface
 
-declare global {
-  namespace Express {
-    interface Request {
-      user?: IUser;
-    }
-  }
-}
-
+/**
+ * Admin-only middleware — allows both 'admin' and 'moderator' roles.
+ * Uses UserRole enum instead of hardcoded strings for consistency.
+ */
 export const adminOnly = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   let token: string | undefined;
 
@@ -31,7 +28,8 @@ export const adminOnly = async (req: Request, res: Response, next: NextFunction)
       return;
     }
 
-    if (!['admin', 'moderator'].includes(user.role)) {
+    const allowed: UserRole[] = ['admin', 'moderator'];
+    if (!allowed.includes(user.role)) {
       res.status(403).json({ message: 'Access denied. Admin role required.' });
       return;
     }

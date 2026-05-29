@@ -1,0 +1,249 @@
+import React, { useEffect, useState } from 'react';
+import adminApi from '../utils/adminApi';
+
+interface BannedUser { _id: string; name: string; email: string; banReason?: string; bannedAt?: string; tier: string; points: number; }
+interface SuspendedUser { _id: string; name: string; email: string; suspendedUntil?: string; tier: string; points: number; }
+interface ModerationLog { _id: string; moderatorId: { name: string; email: string }; action: string; reason: string; targetId: string; targetType: string; duration?: string; createdAt: string; }
+
+function timeAgo(d: string) {
+  const m = Math.floor((Date.now() - new Date(d).getTime()) / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+function until(d?: string) {
+  if (!d) return '—';
+  const diff = new Date(d).getTime() - Date.now();
+  if (diff <= 0) return 'expired';
+  const h = Math.floor(diff / 3600000);
+  const d2 = Math.floor(h / 24);
+  if (d2 > 0) return `${d2}d ${h % 24}h`;
+  return `${h}h`;
+}
+
+export default function AdminModeration() {
+  const [banned, setBanned] = useState<BannedUser[]>([]);
+  const [suspended, setSuspended] = useState<SuspendedUser[]>([]);
+  const [logs, setLogs] = useState<ModerationLog[]>([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [warnModal, setWarnModal] = useState<{ userId: string; name: string } | null>(null);
+  const [warnReason, setWarnReason] = useState('');
+  const [suspendModal, setSuspendModal] = useState<{ userId: string; name: string } | null>(null);
+  const [suspendReason, setSuspendReason] = useState('');
+  const [suspendDuration, setSuspendDuration] = useState('7d');
+  const [banModal, setBanModal] = useState<{ userId: string; name: string } | null>(null);
+  const [banReason, setBanReason] = useState('');
+
+  const fetchQueue = () => {
+    setLoading(true);
+    Promise.all([
+      adminApi.get<{ banned: BannedUser[]; suspended: SuspendedUser[] }>('/moderation/queue'),
+      adminApi.get<{ logs: ModerationLog[]; total: number }>(`/moderation/logs?page=${page}&limit=15`),
+    ]).then(([q, l]) => {
+      setBanned(q.data.banned);
+      setSuspended(q.data.suspended);
+      setLogs(l.data.logs);
+      setTotal(l.data.total);
+    }).finally(() => setLoading(false));
+  };
+
+  useEffect(() => { fetchQueue(); }, [page]);
+
+  const doAction = async (fn: () => Promise<void>) => { try { await fn(); fetchQueue(); } catch {} };
+
+  const handleUnban  = (id: string) => doAction(async () => { await adminApi.post('/moderation/unban', { userId: id }); });
+  const handleUnsuspend = (id: string) => doAction(async () => { await adminApi.post('/moderation/unsuspend', { userId: id }); });
+  const handleWarn    = async () => { if (!warnModal || !warnReason) return; await doAction(async () => { await adminApi.post('/moderation/warn', { userId: warnModal.userId, reason: warnReason }); }); setWarnModal(null); setWarnReason(''); };
+  const handleSuspend = async () => { if (!suspendModal || !suspendReason) return; await doAction(async () => { await adminApi.post('/moderation/suspend', { userId: suspendModal.userId, reason: suspendReason, duration: suspendDuration }); }); setSuspendModal(null); setSuspendReason(''); };
+  const handleBan    = async () => { if (!banModal || !banReason) return; await doAction(async () => { await adminApi.post('/moderation/ban', { userId: banModal.userId, reason: banReason }); }); setBanModal(null); setBanReason(''); };
+
+  const ACTION_LABELS: Record<string, string> = {
+    ban: 'Banned', unban: 'Unbanned', suspend: 'Suspended', unsuspend: 'Unsuspended',
+    warn: 'Warned', soft_delete: 'Soft-deleted', restore: 'Restored',
+    delete_content: 'Content deleted', point_deduct: 'Points deducted', lift_warning: 'Warning lifted',
+    badge_issue_negative: 'Negative badge issued',
+  };
+
+  return (
+    <div className="space-y-5 max-w-4xl">
+      <div>
+        <h2 className="text-lg font-semibold text-gray-900">Moderation</h2>
+        <p className="text-sm text-gray-500 mt-0.5">Manage bans, suspensions, and warnings</p>
+      </div>
+
+      {/* Banned users */}
+      {banned.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 bg-red-50">
+            <p className="text-xs font-semibold text-red-700 uppercase tracking-wide">Banned ({banned.length})</p>
+          </div>
+          <table className="w-full">
+            <thead><tr className="border-b border-gray-100 bg-gray-50">
+              <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase">User</th>
+              <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase">Reason</th>
+              <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase">Banned</th>
+              <th className="px-4 py-2.5 text-right text-[10px] font-semibold text-gray-500 uppercase">Action</th>
+            </tr></thead>
+            <tbody>
+              {banned.map(u => (
+                <tr key={u._id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
+                  <td className="px-4 py-3"><div className="text-sm font-medium text-gray-900">{u.name}</div><div className="text-xs text-gray-500">{u.email}</div></td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{u.banReason || '—'}</td>
+                  <td className="px-4 py-3 text-xs text-gray-400">{u.bannedAt ? timeAgo(u.bannedAt) : '—'}</td>
+                  <td className="px-4 py-3 text-right">
+                    <button onClick={() => handleUnban(u._id)} className="px-3 py-1 rounded text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-500 transition-colors">Unban</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Suspended users */}
+      {suspended.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 bg-amber-50">
+            <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Suspended ({suspended.length})</p>
+          </div>
+          <table className="w-full">
+            <thead><tr className="border-b border-gray-100 bg-gray-50">
+              <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase">User</th>
+              <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase">Expires in</th>
+              <th className="px-4 py-2.5 text-right text-[10px] font-semibold text-gray-500 uppercase">Action</th>
+            </tr></thead>
+            <tbody>
+              {suspended.map(u => (
+                <tr key={u._id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
+                  <td className="px-4 py-3"><div className="text-sm font-medium text-gray-900">{u.name}</div><div className="text-xs text-gray-500">{u.email}</div></td>
+                  <td className="px-4 py-3 text-sm text-amber-600 font-medium">{until(u.suspendedUntil)}</td>
+                  <td className="px-4 py-3 text-right">
+                    <button onClick={() => handleUnsuspend(u._id)} className="px-3 py-1 rounded text-xs font-medium text-white bg-amber-600 hover:bg-amber-500 transition-colors">Lift</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {banned.length === 0 && suspended.length === 0 && !loading && (
+        <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
+          <p className="text-sm text-gray-500">No banned or suspended users</p>
+        </div>
+      )}
+
+      {/* Moderation log */}
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100">
+          <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Moderation Log</p>
+        </div>
+        <div className="divide-y divide-gray-100">
+          {loading ? (
+            <div className="p-8 text-center text-sm text-gray-400">Loading…</div>
+          ) : logs.length === 0 ? (
+            <div className="p-8 text-center text-sm text-gray-400">No moderation actions yet</div>
+          ) : logs.map(log => (
+            <div key={log._id} className="px-4 py-3 hover:bg-gray-50">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-gray-100 text-gray-700 mr-2">{ACTION_LABELS[log.action] ?? log.action}</span>
+                  <span className="text-sm text-gray-800">{log.reason || '—'}</span>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-xs text-gray-500">{log.moderatorId?.name ?? 'System'}</p>
+                  <p className="text-[10px] text-gray-400">{timeAgo(log.createdAt)}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        {total > 15 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
+            <span className="text-xs text-gray-500">Page {page} · {total} entries</span>
+            <div className="flex gap-2">
+              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 text-xs rounded border border-gray-200 hover:bg-gray-50 disabled:opacity-30">← Prev</button>
+              <button onClick={() => setPage(p => p + 1)} disabled={logs.length < 15} className="px-3 py-1 text-xs rounded border border-gray-200 hover:bg-gray-50 disabled:opacity-30">Next →</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Warn Modal */}
+      {warnModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/30 backdrop-blur-sm" onClick={() => setWarnModal(null)}>
+          <div className="w-full max-w-sm bg-white rounded-xl border border-gray-200 shadow-sm" onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-gray-100"><p className="text-sm font-semibold text-gray-900">Warn {warnModal.name}</p></div>
+            <div className="px-5 py-4 space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Reason</label>
+                <textarea rows={3} value={warnReason} onChange={e => setWarnReason(e.target.value)} placeholder="Describe the violation…"
+                  className="w-full px-3 py-2 rounded-md text-sm text-gray-800 bg-gray-50 border border-gray-200 outline-none focus:border-gray-400 resize-none" />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => setWarnModal(null)} className="px-4 py-2 rounded-md text-sm text-gray-500 border border-gray-200 hover:bg-gray-50">Cancel</button>
+                <button onClick={handleWarn} disabled={!warnReason} className="px-4 py-2 rounded-md text-sm font-medium text-white bg-gray-900 hover:bg-gray-700 disabled:opacity-40">Send Warning</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Suspend Modal */}
+      {suspendModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/30 backdrop-blur-sm" onClick={() => setSuspendModal(null)}>
+          <div className="w-full max-w-sm bg-white rounded-xl border border-gray-200 shadow-sm" onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-gray-100"><p className="text-sm font-semibold text-gray-900">Suspend {suspendModal.name}</p></div>
+            <div className="px-5 py-4 space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Duration</label>
+                <div className="flex gap-2">
+                  {['1h','6h','24h','3d','7d'].map(d => (
+                    <button key={d} onClick={() => setSuspendDuration(d)}
+                      className={`px-3 py-1.5 rounded-md text-xs border ${suspendDuration === d ? 'border-gray-900 bg-gray-100 text-gray-900' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>{d}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Reason</label>
+                <textarea rows={2} value={suspendReason} onChange={e => setSuspendReason(e.target.value)} placeholder="Reason for suspension…"
+                  className="w-full px-3 py-2 rounded-md text-sm text-gray-800 bg-gray-50 border border-gray-200 outline-none focus:border-gray-400 resize-none" />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => setSuspendModal(null)} className="px-4 py-2 rounded-md text-sm text-gray-500 border border-gray-200 hover:bg-gray-50">Cancel</button>
+                <button onClick={handleSuspend} disabled={!suspendReason} className="px-4 py-2 rounded-md text-sm font-medium text-white bg-amber-600 hover:bg-amber-500 disabled:opacity-40">Suspend</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Ban Modal */}
+      {banModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/30 backdrop-blur-sm" onClick={() => setBanModal(null)}>
+          <div className="w-full max-w-sm bg-white rounded-xl border border-gray-200 shadow-sm" onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-gray-100"><p className="text-sm font-semibold text-red-700">Permanently Ban {banModal.name}</p></div>
+            <div className="px-5 py-4 space-y-3">
+              <p className="text-xs text-gray-500">This will permanently ban the user. They will not be able to access their account.</p>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Reason (required)</label>
+                <textarea rows={3} value={banReason} onChange={e => setBanReason(e.target.value)} placeholder="Detailed reason for permanent ban…"
+                  className="w-full px-3 py-2 rounded-md text-sm text-gray-800 bg-gray-50 border border-gray-200 outline-none focus:border-gray-400 resize-none" />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => setBanModal(null)} className="px-4 py-2 rounded-md text-sm text-gray-500 border border-gray-200 hover:bg-gray-50">Cancel</button>
+                <button onClick={handleBan} disabled={!banReason} className="px-4 py-2 rounded-md text-sm font-medium text-white bg-red-600 hover:bg-red-500 disabled:opacity-40">Permanently Ban</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

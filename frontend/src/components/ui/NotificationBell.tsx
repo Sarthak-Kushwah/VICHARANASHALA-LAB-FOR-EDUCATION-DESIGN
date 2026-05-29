@@ -1,6 +1,29 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useNotifications } from '../../hooks/useNotifications';
+import api from '../../utils/api';
+import { useAuth } from '../../hooks/useAuth';
+
+interface TeaDrop {
+  _id: string;
+  faqId: string;
+  faqQuestion: string;
+  read: boolean;
+  createdAt: string;
+}
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const secs = Math.floor(diff / 1000);
+  if (secs < 60) return 'just now';
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
 
 function BellIcon({ hasUnread }: { hasUnread: boolean }) {
   return (
@@ -11,111 +34,85 @@ function BellIcon({ hasUnread }: { hasUnread: boolean }) {
   );
 }
 
-function NotificationDropdown({
-  notifications,
-  unreadCount,
-  onMarkAsRead,
-  onMarkAllRead,
-  onClose,
-}: {
-  notifications: ReturnType<typeof useNotifications>['notifications'];
-  unreadCount: number;
-  onMarkAsRead: (id: string) => void;
-  onMarkAllRead: () => void;
-  onClose: () => void;
-}) {
-  const navigate = useNavigate();
-
-  const handleClick = (notif: typeof notifications[0]) => {
-    if (!notif.read) onMarkAsRead(notif._id);
-    if (notif.link !== '#') navigate(notif.link);
-    onClose();
-  };
-
-  return (
-    <div className="absolute right-0 top-12 w-80 bg-white rounded-2xl border border-border shadow-float py-2 animate-fade-in z-50">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-border/50">
-        <h3 className="text-sm font-semibold text-ink">Notifications</h3>
-        {unreadCount > 0 && (
-          <button
-            onClick={onMarkAllRead}
-            className="text-xs text-accent hover:text-accent-dark font-medium transition-colors"
-          >
-            Mark all read
-          </button>
-        )}
-      </div>
-
-      <div className="max-h-80 overflow-y-auto">
-        {notifications.length === 0 ? (
-          <div className="px-4 py-8 text-center">
-            <p className="text-sm text-ink-soft">No notifications yet</p>
-            <p className="text-xs text-ink-faint mt-1">We&apos;ll notify you when your questions get answered</p>
-          </div>
-        ) : (
-          notifications.slice(0, 10).map(notif => (
-            <button
-              key={notif._id}
-              onClick={() => handleClick(notif)}
-              className={`w-full text-left px-4 py-3 border-b border-border/30 hover:bg-bg transition-colors ${
-                !notif.read ? 'bg-accent-light/30' : ''
-              }`}
-            >
-              <div className="flex items-start gap-2">
-                {/* Unread dot */}
-                {!notif.read && (
-                  <span className="w-2 h-2 rounded-full bg-accent mt-1.5 flex-shrink-0" />
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-medium leading-snug ${!notif.read ? 'text-ink' : 'text-ink-soft'}`}>
-                    {notif.title}
-                  </p>
-                  <p className="text-xs text-ink-faint mt-0.5 line-clamp-2">{notif.message}</p>
-                  <p className="text-xs text-ink-faint/60 mt-1">
-                    {new Date(notif.createdAt).toLocaleDateString('en-IN', {
-                      day: 'numeric',
-                      month: 'short',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </p>
-                </div>
-              </div>
-            </button>
-          ))
-        )}
-      </div>
-
-      <div className="px-4 py-2 border-t border-border/50">
-        <p className="text-xs text-ink-faint text-center">Click to view details</p>
-      </div>
-    </div>
-  );
-}
-
 export default function NotificationBell() {
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<'general' | 'tea'>('general');
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { notifications, unreadCount, markAsRead, markAllAsRead, refresh } = useNotifications();
 
-  // Close when clicking outside
+  // Tea state
+  const [teaDrops, setTeaDrops] = useState<TeaDrop[]>([]);
+  const [teaUnread, setTeaUnread] = useState(0);
+  const [teaLoading, setTeaLoading] = useState(false);
+  const [teaPage, setTeaPage] = useState(1);
+  const [teaHasMore, setTeaHasMore] = useState(false);
+
+  const fetchTea = useCallback(async (pageNum = 1, reset = false) => {
+    if (!user) return;
+    setTeaLoading(true);
+    try {
+      const res = await api.get<{
+        drops: TeaDrop[];
+        hasMore: boolean;
+        unreadCount: number;
+      }>(`/notifications/tea?page=${pageNum}&limit=20`);
+      setTeaDrops((prev) => (reset ? res.data.drops : [...prev, ...res.data.drops]));
+      setTeaUnread(res.data.unreadCount);
+      setTeaHasMore(res.data.hasMore);
+      setTeaPage(pageNum);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setTeaLoading(false);
+    }
+  }, [user]);
+
   useEffect(() => {
     if (!open) return;
-    const handleClick = (e: MouseEvent) => {
+    if (tab === 'tea') fetchTea(1, true);
+    const handler = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setOpen(false);
       }
     };
-    document.addEventListener('click', handleClick);
-    return () => document.removeEventListener('click', handleClick);
-  }, [open]);
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open, tab, fetchTea]);
 
-  // Refresh on focus (in case user resolves something in another tab)
   useEffect(() => {
     const handleFocus = () => refresh();
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
   }, [refresh]);
+
+  const handleMarkAllTeaRead = async () => {
+    try {
+      await api.patch('/notifications/tea/read-all');
+      setTeaDrops((prev) => prev.map((d) => ({ ...d, read: true })));
+      setTeaUnread(0);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleMarkOneTeaRead = async (id: string) => {
+    try {
+      await api.patch(`/notifications/tea/${id}/read`);
+      setTeaDrops((prev) => prev.map((d) => (d._id === id ? { ...d, read: true } : d)));
+      setTeaUnread((u) => Math.max(0, u - 1));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleTeaClick = (drop: TeaDrop) => {
+    if (!drop.read) handleMarkOneTeaRead(drop._id);
+    window.location.href = `/faq?q=${encodeURIComponent(drop.faqQuestion)}`;
+    setOpen(false);
+  };
+
+  const totalUnread = unreadCount + teaUnread;
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -124,22 +121,165 @@ export default function NotificationBell() {
         className="hidden lg:flex w-9 h-9 items-center justify-center rounded-full hover:bg-black/[0.04] transition-colors relative cursor-pointer"
         aria-label="Notifications"
       >
-        <BellIcon hasUnread={unreadCount > 0} />
-        {unreadCount > 0 && (
+        <BellIcon hasUnread={totalUnread > 0} />
+        {totalUnread > 0 && (
           <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-accent text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 shadow-md">
-            {unreadCount > 99 ? '99+' : unreadCount}
+            {totalUnread > 99 ? '99+' : totalUnread}
           </span>
         )}
       </button>
 
       {open && (
-        <NotificationDropdown
-          notifications={notifications}
-          unreadCount={unreadCount}
-          onMarkAsRead={markAsRead}
-          onMarkAllRead={markAllAsRead}
-          onClose={() => setOpen(false)}
-        />
+        <div className="absolute right-0 top-12 w-80 bg-white rounded-2xl border border-border shadow-float z-50 overflow-hidden animate-fade-in">
+          {/* Tabs */}
+          <div className="flex border-b border-border/60">
+            <button
+              onClick={() => setTab('general')}
+              className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-3 text-xs font-semibold transition-colors border-b-2 ${
+                tab === 'general'
+                  ? 'border-accent text-accent'
+                  : 'border-transparent text-ink-faint hover:text-ink'
+              }`}
+            >
+              🔔 General
+              {unreadCount > 0 && (
+                <span className="bg-accent text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => { setTab('tea'); fetchTea(1, true); }}
+              className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-3 text-xs font-semibold transition-colors border-b-2 ${
+                tab === 'tea'
+                  ? 'border-accent text-accent'
+                  : 'border-transparent text-ink-faint hover:text-ink'
+              }`}
+            >
+              ☕ Spill the Tea
+              {teaUnread > 0 && (
+                <span className="bg-accent text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
+                  {teaUnread}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* ── General tab ── */}
+          {tab === 'general' && (
+            <>
+              {unreadCount > 0 && (
+                <div className="px-4 py-2 border-b border-border/40 flex justify-end">
+                  <button
+                    onClick={markAllAsRead}
+                    className="text-[11px] text-accent hover:text-accent-dark font-medium transition-colors"
+                  >
+                    Mark all read
+                  </button>
+                </div>
+              )}
+              <div className="max-h-80 overflow-y-auto">
+                {notifications.length === 0 ? (
+                  <div className="px-4 py-8 text-center">
+                    <p className="text-sm text-ink-soft">No notifications yet</p>
+                    <p className="text-xs text-ink-faint mt-1">We&apos;ll notify you when your questions get answered</p>
+                  </div>
+                ) : (
+                  notifications.slice(0, 10).map(notif => (
+                    <button
+                      key={notif._id}
+                      onClick={() => { if (!notif.read) markAsRead(notif._id); setOpen(false); }}
+                      className={`w-full text-left px-4 py-3 border-b border-border/30 hover:bg-bg transition-colors ${!notif.read ? 'bg-accent-light/20' : ''}`}
+                    >
+                      <div className="flex items-start gap-2">
+                        {!notif.read && <span className="w-2 h-2 rounded-full bg-accent mt-1.5 flex-shrink-0" />}
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-medium leading-snug ${!notif.read ? 'text-ink' : 'text-ink-soft'}`}>
+                            {notif.title}
+                          </p>
+                          <p className="text-xs text-ink-faint mt-0.5 line-clamp-2">{notif.message}</p>
+                          <p className="text-xs text-ink-faint/60 mt-1">
+                            {new Date(notif.createdAt).toLocaleDateString('en-IN', {
+                              day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+                            })}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </>
+          )}
+
+          {/* ── Tea tab ── */}
+          {tab === 'tea' && (
+            <>
+              {teaUnread > 0 && (
+                <div className="px-4 py-2 border-b border-border/40 flex justify-end">
+                  <button
+                    onClick={handleMarkAllTeaRead}
+                    className="text-[11px] text-accent hover:text-accent-dark font-medium transition-colors"
+                  >
+                    Mark all read
+                  </button>
+                </div>
+              )}
+              <div className="max-h-80 overflow-y-auto">
+                {teaLoading && teaDrops.length === 0 ? (
+                  <div className="p-4 space-y-2">
+                    {[1, 2, 3].map((i) => <div key={i} className="h-12 rounded-xl bg-mist animate-pulse" />)}
+                  </div>
+                ) : teaDrops.length === 0 ? (
+                  <div className="flex flex-col items-center py-10 px-4 text-center">
+                    <span className="text-2xl mb-2">👀</span>
+                    <p className="text-sm font-medium text-ink-soft">No tea yet</p>
+                    <p className="text-xs text-ink-faint mt-1">New FAQs will appear here as drops</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border/40">
+                    {teaDrops.map((drop, idx) => (
+                      <button
+                        key={drop._id}
+                        onClick={() => handleTeaClick(drop)}
+                        className={`w-full text-left px-4 py-3 hover:bg-mist/50 transition-colors ${!drop.read ? 'bg-accent-light/20' : ''}`}
+                      >
+                        <div className="flex items-start gap-2.5">
+                          <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs ${
+                            !drop.read && idx === 0 ? 'bg-accent text-white' : 'bg-mist text-ink-faint'
+                          }`}>
+                            {idx === 0 && !drop.read ? '☕' : '🍵'}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                              <span className={`text-[10px] font-semibold uppercase tracking-wider ${
+                                !drop.read && idx === 0 ? 'text-accent' : 'text-ink-faint'
+                              }`}>
+                                {!drop.read && idx === 0 ? 'fresh tea ☕' : 'tea'}
+                              </span>
+                              <span className="text-[10px] text-ink-faint">·</span>
+                              <span className="text-[10px] text-ink-faint">{timeAgo(drop.createdAt)}</span>
+                            </div>
+                            <p className="text-xs text-ink leading-snug line-clamp-2">{drop.faqQuestion}</p>
+                          </div>
+                          {!drop.read && <div className="flex-shrink-0 w-2 h-2 rounded-full bg-accent mt-1" />}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {teaHasMore && (
+                <button
+                  onClick={() => fetchTea(teaPage + 1)}
+                  className="w-full px-4 py-2.5 text-xs font-medium text-ink-faint hover:text-ink hover:bg-mist/30 transition-colors border-t border-border/40"
+                >
+                  {teaLoading ? 'Loading…' : 'Load more tea →'}
+                </button>
+              )}
+            </>
+          )}
+        </div>
       )}
     </div>
   );

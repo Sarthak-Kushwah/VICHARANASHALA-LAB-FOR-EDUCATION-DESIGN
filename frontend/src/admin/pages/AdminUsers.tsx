@@ -1,369 +1,348 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useEffect, useState, useCallback } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import adminApi from '../utils/adminApi';
 import Badge from '../components/common/Badge';
 
-type UserRole = 'admin' | 'moderator' | 'user' | 'ai_moderator';
+function useDebounce<T>(value: T, delay: number): T { const [v, setV] = useState(value); useEffect(() => { const t = setTimeout(() => setV(value), delay); return () => clearTimeout(t); }, [value, delay]); return v; }
+type UserRole = 'admin' | 'moderator' | 'user' | 'ai_moderator' | 'expert';
+interface AdminUser { _id: string; name: string; email: string; role: UserRole; createdAt: string; updatedAt: string; points?: number; reputation?: number; tier?: string; positiveBadges?: Array<{ badgeId: { _id: string; name: string; slug: string; icon: string; description: string }; awardedAt?: string; reason?: string }>; negativeBadges?: Array<{ badgeId: { _id: string; name: string; slug: string; icon: string }; awardedAt?: string; reason?: string }>; isBanned?: boolean; suspendedUntil?: string; }
+interface UsersApiResponse { users: AdminUser[]; total: number; pages: number; }
 
-interface AdminUser {
-  _id: string;
-  name: string;
-  email: string;
-  role: UserRole;
-  createdAt: string;
-  updatedAt: string;
+const TIER_COLORS: Record<string, string> = { newcomer: 'bg-gray-100 text-gray-600', bronze: 'bg-amber-100 text-amber-700', silver: 'bg-slate-100 text-slate-600', gold: 'bg-yellow-100 text-yellow-700', platinum: 'bg-indigo-100 text-indigo-700', legend: 'bg-violet-100 text-violet-700' };
+const TIER_ICONS: Record<string, string> = { newcomer: '🌱', bronze: '🥉', silver: '🥈', gold: '🥇', platinum: '💎', legend: '👑' };
+
+function timeAgo(d: string) { const m = Math.floor((Date.now() - new Date(d).getTime()) / 60000); if (m < 1) return 'just now'; if (m < 60) return `${m}m ago`; const h = Math.floor(m / 3600); if (h < 24) return `${h}h ago`; return `${Math.floor(h / 24)}d ago`; }
+
+function UserDetailModal({ user, onClose, onRefresh }: { user: AdminUser; onClose: () => void; onRefresh: () => void }) {
+  const [warnModal, setWarnModal] = useState(false);
+  const [suspendModal, setSuspendModal] = useState(false);
+  const [banModal, setBanModal] = useState(false);
+  const [suspendDuration, setSuspendDuration] = useState('7d');
+  const [actionLoading, setActionLoading] = useState('');
+  const [warnReason, setWarnReason] = useState('');
+  const [suspendReason, setSuspendReason] = useState('');
+  const [banReason, setBanReason] = useState('');
+
+  const doAction = async (fn: () => Promise<void>, postAction?: () => void) => { setActionLoading('*'); try { await fn(); if (postAction) postAction(); onRefresh(); } catch {} finally { setActionLoading(''); } };
+
+  const handleUnban    = () => doAction(async () => { await adminApi.post('/moderation/unban', { userId: user._id }); });
+  const handleUnsuspend = () => doAction(async () => { await adminApi.post('/moderation/unsuspend', { userId: user._id }); });
+  const handleWarn     = async () => { if (!warnReason) return; await doAction(async () => { await adminApi.post('/moderation/warn', { userId: user._id, reason: warnReason }); }); setWarnModal(false); setWarnReason(''); };
+  const handleSuspend  = async () => { if (!suspendReason) return; await doAction(async () => { await adminApi.post('/moderation/suspend', { userId: user._id, reason: suspendReason, duration: suspendDuration }); }); setSuspendModal(false); setSuspendReason(''); };
+  const handleBan      = async () => { if (!banReason) return; await doAction(async () => { await adminApi.post('/moderation/ban', { userId: user._id, reason: banReason }); }); setBanModal(false); setBanReason(''); };
+  const handleSoftDelete = () => doAction(async () => { await adminApi.post('/moderation/soft-delete', { userId: user._id, reason: 'Admin soft delete' }); onClose(); });
+
+  const tier = user.tier || 'newcomer';
+  const posBadges = user.positiveBadges || [];
+  const negBadges = user.negativeBadges || [];
+
+  return (
+    <>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/30 backdrop-blur-sm" onClick={onClose}>
+        <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-lg bg-white rounded-xl border border-gray-200 shadow-sm max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+          <div className="px-5 py-4 border-b border-gray-100 flex items-start justify-between gap-4 shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-base font-semibold text-gray-700">{user.name?.[0]?.toUpperCase()}</div>
+              <div>
+                <p className="text-sm font-semibold text-gray-900">{user.name}</p>
+                <p className="text-xs text-gray-500">{user.email}</p>
+              </div>
+            </div>
+            <div className="flex flex-col items-end gap-1.5">
+              <Badge status={user.role === 'admin' ? 'admin' : user.role === 'moderator' ? 'moderator' : user.role === 'ai_moderator' ? 'ai_moderator' : 'user'} label={user.role} />
+              {user.isBanned && <span className="text-[10px] font-semibold text-red-600 bg-red-50 px-1.5 py-0.5 rounded">BANNED</span>}
+              {user.suspendedUntil && new Date(user.suspendedUntil) > new Date() && <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">SUSPENDED</span>}
+            </div>
+          </div>
+
+          <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+            {/* Stats */}
+            <div className="grid grid-cols-4 gap-2">
+              <div className="bg-gray-50 border border-gray-100 rounded-lg p-2.5 text-center">
+                <p className="text-base font-bold text-gray-900">{user.points ?? 0}</p>
+                <p className="text-[10px] text-gray-500 mt-0.5">Points</p>
+              </div>
+              <div className="bg-gray-50 border border-gray-100 rounded-lg p-2.5 text-center">
+                <p className="text-base font-bold text-gray-900">{user.reputation ?? 0}</p>
+                <p className="text-[10px] text-gray-500 mt-0.5">Rep</p>
+              </div>
+              <div className="bg-gray-50 border border-gray-100 rounded-lg p-2.5 text-center">
+                <span className={`inline-flex items-center gap-1 text-xs font-bold ${TIER_COLORS[tier] || ''} px-1.5 py-0.5 rounded`}>{TIER_ICONS[tier]} {tier}</span>
+                <p className="text-[10px] text-gray-500 mt-0.5">Tier</p>
+              </div>
+              <div className="bg-gray-50 border border-gray-100 rounded-lg p-2.5 text-center">
+                <p className="text-base font-bold text-gray-900">{posBadges.length}</p>
+                <p className="text-[10px] text-gray-500 mt-0.5">Badges</p>
+              </div>
+            </div>
+
+            {/* Tier progress */}
+            <div>
+              <p className="text-[10px] font-semibold text-gray-500 uppercase mb-1.5">Tier Progress</p>
+              <div className="flex items-center gap-2">
+                {['newcomer','bronze','silver','gold','platinum','legend'].map((t, i, arr) => {
+                  const thresholds: Record<string, number> = { newcomer: 0, bronze: 50, silver: 200, gold: 500, platinum: 1000, legend: 2500 };
+                  const points = user.points ?? 0;
+                  const pct = arr[i + 1] ? Math.min(100, Math.round(((points - thresholds[t]) / (thresholds[arr[i + 1]] - thresholds[t])) * 100)) : 100;
+                  return (
+                    <div key={t} className="flex-1">
+                      <div className={`h-1.5 rounded-full ${TIER_COLORS[t]} ${t === tier ? '' : 'opacity-30'}`}>
+                        {t === tier && <div className="h-full bg-current rounded-full" style={{ width: `${pct}%` }} />}
+                      </div>
+                      <p className="text-[9px] text-gray-400 mt-0.5 text-center">{TIER_ICONS[t]}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Positive badges */}
+            {posBadges.length > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold text-gray-500 uppercase mb-1.5">Badges</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {posBadges.map((b, i) => (
+                    <div key={i} className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-50 border border-emerald-100 text-xs text-emerald-700">
+                      <span>{b.badgeId?.icon ?? '🏅'}</span>
+                      <span className="font-light">{b.badgeId?.name ?? 'Badge'}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Negative badges */}
+            {negBadges.length > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold text-gray-500 uppercase mb-1.5">Penalties</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {negBadges.map((b, i) => (
+                    <div key={i} className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-red-50 border border-red-100 text-xs text-red-700">
+                      <span>{b.badgeId?.icon ?? '⚠️'}</span>
+                      <span className="font-light">{b.badgeId?.name ?? 'Penalty'}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Joined */}
+            <div className="text-xs text-gray-400">Joined {new Date(user.createdAt).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+          </div>
+
+          {/* Action buttons */}
+          <div className="px-5 py-4 border-t border-gray-100 flex flex-wrap gap-2 shrink-0">
+            {user.isBanned ? (
+              <button onClick={handleUnban} disabled={!!actionLoading} className="px-3 py-1.5 rounded-md text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50">Unban</button>
+            ) : (
+              <>
+                <button onClick={() => setWarnModal(true)} disabled={!!actionLoading} className="px-3 py-1.5 rounded-md text-xs font-medium text-white bg-gray-700 hover:bg-gray-600 disabled:opacity-50">Warn</button>
+                <button onClick={() => setSuspendModal(true)} disabled={!!actionLoading} className="px-3 py-1.5 rounded-md text-xs font-medium text-white bg-amber-600 hover:bg-amber-500 disabled:opacity-50">Suspend</button>
+                <button onClick={() => setBanModal(true)} disabled={!!actionLoading} className="px-3 py-1.5 rounded-md text-xs font-medium text-white bg-red-600 hover:bg-red-500 disabled:opacity-50">Ban</button>
+              </>
+            )}
+            {user.suspendedUntil && new Date(user.suspendedUntil) > new Date() && (
+              <button onClick={handleUnsuspend} disabled={!!actionLoading} className="px-3 py-1.5 rounded-md text-xs font-medium text-white bg-amber-600 hover:bg-amber-500 disabled:opacity-50">Lift Suspension</button>
+            )}
+            <button onClick={handleSoftDelete} disabled={!!actionLoading || user.role === 'admin'} className="px-3 py-1.5 rounded-md text-xs text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-40 ml-auto">Soft Delete</button>
+            <button onClick={onClose} className="px-3 py-1.5 rounded-md text-xs text-gray-500 border border-gray-200 hover:bg-gray-50">Close</button>
+          </div>
+        </motion.div>
+      </div>
+
+      {/* Warn Modal */}
+      {warnModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm" onClick={() => setWarnModal(false)}>
+          <div className="w-full max-w-xs bg-white rounded-xl border border-gray-200 shadow-sm" onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-gray-100"><p className="text-sm font-semibold text-gray-900">Send Warning to {user.name}</p></div>
+            <div className="px-5 py-4 space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Reason</label>
+                <textarea rows={3} value={warnReason} onChange={e => setWarnReason(e.target.value)} placeholder="Describe the violation…"
+                  className="w-full px-3 py-2 rounded-md text-sm text-gray-800 bg-gray-50 border border-gray-200 outline-none focus:border-gray-400 resize-none" />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => setWarnModal(false)} className="px-4 py-2 rounded-md text-sm text-gray-500 border border-gray-200 hover:bg-gray-50">Cancel</button>
+                <button onClick={handleWarn} disabled={!warnReason} className="px-4 py-2 rounded-md text-sm font-medium text-white bg-gray-900 hover:bg-gray-700 disabled:opacity-40">Send Warning</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Suspend Modal */}
+      {suspendModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm" onClick={() => setSuspendModal(false)}>
+          <div className="w-full max-w-xs bg-white rounded-xl border border-gray-200 shadow-sm" onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-gray-100"><p className="text-sm font-semibold text-gray-900">Suspend {user.name}</p></div>
+            <div className="px-5 py-4 space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Duration</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {['1h','6h','24h','3d','7d'].map(d => (
+                    <button key={d} onClick={() => setSuspendDuration(d)}
+                      className={`px-3 py-1.5 rounded-md text-xs border ${suspendDuration === d ? 'border-gray-900 bg-gray-100 text-gray-900' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>{d}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Reason</label>
+                <textarea rows={2} value={suspendReason} onChange={e => setSuspendReason(e.target.value)} placeholder="Reason…"
+                  className="w-full px-3 py-2 rounded-md text-sm text-gray-800 bg-gray-50 border border-gray-200 outline-none focus:border-gray-400 resize-none" />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => setSuspendModal(false)} className="px-4 py-2 rounded-md text-sm text-gray-500 border border-gray-200 hover:bg-gray-50">Cancel</button>
+                <button onClick={handleSuspend} disabled={!suspendReason} className="px-4 py-2 rounded-md text-sm font-medium text-white bg-amber-600 hover:bg-amber-500 disabled:opacity-40">Suspend</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Ban Modal */}
+      {banModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm" onClick={() => setBanModal(false)}>
+          <div className="w-full max-w-xs bg-white rounded-xl border border-gray-200 shadow-sm" onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-gray-100"><p className="text-sm font-semibold text-red-700">Ban {user.name} permanently</p></div>
+            <div className="px-5 py-4 space-y-3">
+              <p className="text-xs text-gray-500">This user will be permanently banned and cannot access their account.</p>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Reason (required)</label>
+                <textarea rows={3} value={banReason} onChange={e => setBanReason(e.target.value)} placeholder="Detailed reason…"
+                  className="w-full px-3 py-2 rounded-md text-sm text-gray-800 bg-gray-50 border border-gray-200 outline-none focus:border-gray-400 resize-none" />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => setBanModal(false)} className="px-4 py-2 rounded-md text-sm text-gray-500 border border-gray-200 hover:bg-gray-50">Cancel</button>
+                <button onClick={handleBan} disabled={!banReason} className="px-4 py-2 rounded-md text-sm font-medium text-white bg-red-600 hover:bg-red-500 disabled:opacity-40">Ban User</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
 }
 
-interface UsersApiResponse {
-  users: AdminUser[];
-  total: number;
-  pages: number;
-}
-
-const ALL_ROLES: UserRole[] = ['admin', 'moderator', 'user', 'ai_moderator'];
-
-const roleColors: Record<UserRole, string> = {
-  admin: 'admin',
-  moderator: 'moderator',
-  user: 'user',
-  ai_moderator: 'cyan',
-};
-
-// ─── Role Edit Modal ───────────────────────────────────────
-
-interface RoleModalProps {
-  user: AdminUser;
-  onClose: () => void;
-  onUpdated: (updated: AdminUser) => void;
-}
-
-function RoleModal({ user, onClose, onUpdated }: RoleModalProps) {
+function RoleModal({ user, onClose, onUpdated }: { user: AdminUser; onClose: () => void; onUpdated: (u: AdminUser) => void }) {
   const [role, setRole] = useState<UserRole>(user.role);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  const handleSave = async () => {
-    if (role === user.role) { onClose(); return; }
-    setLoading(true);
-    setError('');
-    try {
-      const res = await adminApi.patch<{ user: AdminUser }>(`/auth/users/${user._id}/role`, { role });
-      onUpdated({ ...user, role: res.data.user.role });
-      onClose();
-    } catch (err) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Failed to update role';
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  const handleSave = async () => { if (role === user.role) { onClose(); return; } setLoading(true); setError(''); try { const res = await adminApi.patch<{ user: AdminUser }>(`/auth/users/${user._id}/role`, { role }); onUpdated({ ...user, role: res.data.user.role }); onClose(); } catch (err) { setError(((err as { response?: { data?: { message?: string } } })?.response?.data?.message) ?? 'Failed'); } finally { setLoading(false); } };
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-      onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-sm rounded-2xl border p-6 shadow-2xl"
-        style={{ background: '#0f0f14', borderColor: 'rgba(255,255,255,0.1)' }}>
-        <h3 className="text-base font-semibold text-white/90 mb-1">Change Role</h3>
-        <p className="text-xs text-white/30 mb-5">Update role for <span className="text-white/60">{user.name}</span></p>
-
-        <div className="space-y-2 mb-5">
-          {ALL_ROLES.map(r => (
-            <label key={r} className={`flex items-center gap-3 px-4 py-3 rounded-xl cursor-pointer border transition-all ${role === r ? 'border-violet-500/60 bg-violet-500/10' : 'border-white/6 bg-white/[0.03] hover:bg-white/[0.06]'}`}>
-              <input type="radio" name="role" value={r} checked={role === r}
-                onChange={() => setRole(r)}
-                className="accent-violet-500" />
-              <span className="text-sm text-white/80 capitalize">{r.replace('_', ' ')}</span>
-              {r === 'admin' && <span className="ml-auto text-[10px] text-violet-400/70">full access</span>}
-              {r === 'moderator' && <span className="ml-auto text-[10px] text-cyan-400/70">moderate</span>}
-              {r === 'user' && <span className="ml-auto text-[10px] text-white/30">read + post</span>}
-              {r === 'ai_moderator' && <span className="ml-auto text-[10px] text-emerald-400/70">AI-assisted</span>}
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/30 backdrop-blur-sm" onClick={e => e.target === e.currentTarget && onClose()}>
+      <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm bg-white rounded-xl border border-gray-200 shadow-sm">
+        <div className="px-5 py-4 border-b border-gray-100"><p className="text-sm font-semibold text-gray-900">Change Role</p><p className="text-xs text-gray-500 mt-0.5">{user.name} · {user.email}</p></div>
+        <div className="px-5 py-4 space-y-1.5">
+          {(['admin', 'moderator', 'user', 'ai_moderator'] as UserRole[]).map(r => (
+            <label key={r} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer border transition-all text-sm ${role === r ? 'border-gray-400 bg-gray-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+              <input type="radio" name="role" value={r} checked={role === r} onChange={() => setRole(r)} className="accent-gray-900" />
+              <span className="text-gray-800 capitalize font-light">{r.replace('_', ' ')}</span>
             </label>
           ))}
         </div>
-
-        {error && <p className="text-xs text-red-400 mb-3">{error}</p>}
-
-        <div className="flex gap-3">
-          <button onClick={onClose} disabled={loading}
-            className="flex-1 py-2.5 rounded-xl text-sm text-white/50 border border-white/10 hover:bg-white/[0.05] transition-colors">
-            Cancel
-          </button>
-          <button onClick={handleSave} disabled={loading || role === user.role}
-            className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white transition-colors">
-            {loading ? 'Saving…' : 'Save'}
-          </button>
+        {error && <p className="px-5 pb-2 text-xs text-red-500">{error}</p>}
+        <div className="px-5 pb-4 flex gap-2">
+          <button onClick={onClose} disabled={loading} className="flex-1 py-2 rounded-lg text-sm text-gray-500 border border-gray-200 hover:bg-gray-50 transition-colors">Cancel</button>
+          <button onClick={handleSave} disabled={loading || role === user.role} className="flex-1 py-2 rounded-lg text-sm font-medium text-white bg-gray-900 hover:bg-gray-700 disabled:opacity-40 transition-colors">{loading ? 'Saving…' : 'Save'}</button>
         </div>
       </motion.div>
     </div>
   );
 }
 
-// ─── Delete Confirm Modal ─────────────────────────────────
-
-interface DeleteModalProps {
-  user: AdminUser;
-  onClose: () => void;
-  onDeleted: (id: string) => void;
-}
-
-function DeleteModal({ user, onClose, onDeleted }: DeleteModalProps) {
+function DeleteModal({ user, onClose, onDeleted }: { user: AdminUser; onClose: () => void; onDeleted: (id: string) => void }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  const handleDelete = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      await adminApi.delete(`/auth/users/${user._id}`);
-      onDeleted(user._id);
-      onClose();
-    } catch (err) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Failed to delete user';
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  const handleDelete = async () => { setLoading(true); setError(''); try { await adminApi.delete(`/auth/users/${user._id}`); onDeleted(user._id); onClose(); } catch (err) { setError(((err as { response?: { data?: { message?: string } } })?.response?.data?.message) ?? 'Failed'); } finally { setLoading(false); } };
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-      onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-sm rounded-2xl border p-6 shadow-2xl"
-        style={{ background: '#0f0f14', borderColor: 'rgba(255,255,255,0.1)' }}>
-        <div className="w-10 h-10 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-4">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-        </div>
-        <h3 className="text-base font-semibold text-white/90 mb-1">Delete User</h3>
-        <p className="text-xs text-white/40 mb-5">
-          Are you sure you want to delete <span className="text-white/60">{user.name}</span>? This action cannot be undone.
-        </p>
-
-        {error && <p className="text-xs text-red-400 mb-3">{error}</p>}
-
-        <div className="flex gap-3">
-          <button onClick={onClose} disabled={loading}
-            className="flex-1 py-2.5 rounded-xl text-sm text-white/50 border border-white/10 hover:bg-white/[0.05] transition-colors">
-            Cancel
-          </button>
-          <button onClick={handleDelete} disabled={loading}
-            className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white transition-colors">
-            {loading ? 'Deleting…' : 'Delete'}
-          </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/30 backdrop-blur-sm" onClick={e => e.target === e.currentTarget && onClose()}>
+      <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-xs bg-white rounded-xl border border-gray-200 shadow-sm">
+        <div className="px-5 py-4"><p className="text-sm font-semibold text-gray-900">Delete User</p><p className="text-xs text-gray-500 mt-1">Remove <span className="text-gray-800">{user.name}</span>? Cannot be undone.</p></div>
+        {error && <p className="px-5 pb-2 text-xs text-red-500">{error}</p>}
+        <div className="px-5 pb-4 flex gap-2">
+          <button onClick={onClose} disabled={loading} className="flex-1 py-2 rounded-lg text-sm text-gray-500 border border-gray-200 hover:bg-gray-50 transition-colors">Cancel</button>
+          <button onClick={handleDelete} disabled={loading} className="flex-1 py-2 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-500 disabled:opacity-40 transition-colors">{loading ? 'Deleting…' : 'Delete'}</button>
         </div>
       </motion.div>
     </div>
   );
-}
-
-// ─── Main Component ───────────────────────────────────────
-
-function useDebounce<T>(value: T, delay: number): T {
-  const [d, setD] = useState<T>(value);
-  useEffect(() => {
-    const t = setTimeout(() => setD(value), delay);
-    return () => clearTimeout(t);
-  }, [value, delay]);
-  return d;
-}
-
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return 'just now';
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const day = Math.floor(h / 24);
-  if (day < 30) return `${day}d ago`;
-  return new Date(dateStr).toLocaleDateString('en-IN');
 }
 
 export default function AdminUsers() {
   const [users, setUsers] = useState<AdminUser[]>([]);
-  const [total, setTotal] = useState<number>(0);
-  const [page, setPage] = useState<number>(1);
-  const [pages, setPages] = useState<number>(1);
-  const [search, setSearch] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(true);
-
-  // Modal state
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
   const [editUser, setEditUser] = useState<AdminUser | null>(null);
   const [deleteUser, setDeleteUser] = useState<AdminUser | null>(null);
-
+  const [detailUser, setDetailUser] = useState<AdminUser | null>(null);
   const dSearch = useDebounce(search, 350);
 
   const fetchUsers = useCallback(() => {
     setLoading(true);
     const params = new URLSearchParams({ page: page.toString(), limit: '15' });
     if (dSearch) params.set('search', dSearch);
-    adminApi.get(`/admin/users?${params}`)
-      .then(r => {
-        const data = r.data as UsersApiResponse;
-        setUsers(data.users);
-        setTotal(data.total);
-        setPages(data.pages);
-      })
-      .catch((err: unknown) => {
-        const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Failed to load users';
-        console.error(msg);
-      })
-      .finally(() => setLoading(false));
+    adminApi.get(`/admin/users?${params}`).then(r => { const d = r.data as UsersApiResponse; setUsers(d.users); setTotal(d.total); setPages(d.pages); }).finally(() => setLoading(false));
   }, [page, dSearch]);
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
   useEffect(() => { setPage(1); }, [dSearch]);
+  const handleRoleUpdated = (updated: AdminUser) => setUsers(prev => prev.map(u => u._id === updated._id ? updated : u));
+  const handleDeleted = (id: string) => { setUsers(prev => prev.filter(u => u._id !== id)); setTotal(p => p - 1); };
 
-  const handleRoleUpdated = (updated: AdminUser) => {
-    setUsers(prev => prev.map(u => u._id === updated._id ? updated : u));
-  };
-
-  const handleDeleted = (id: string) => {
-    setUsers(prev => prev.filter(u => u._id !== id));
-    setTotal(prev => prev - 1);
-  };
-
-  const cardStyle: React.CSSProperties = { background: 'rgba(255,255,255,0.02)', borderColor: 'rgba(255,255,255,0.06)' };
-  const rowStyle: React.CSSProperties = { borderColor: 'rgba(255,255,255,0.04)' };
-
-  const stats = [
-    { label: 'Total Users', value: total, color: '#8b5cf6' },
-    { label: 'Admins', value: users.filter(u => u.role === 'admin').length, color: '#a78bfa' },
-    { label: 'Moderators', value: users.filter(u => u.role === 'moderator').length, color: '#22d3ee' },
-    { label: 'Regular Users', value: users.filter(u => u.role === 'user').length, color: '#3b82f6' },
-  ];
+  const th = 'px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide';
+  const td = 'px-4 py-3 text-sm text-gray-800';
 
   return (
-    <div className="space-y-5 pb-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-white/90">User Activity</h2>
-          <p className="text-xs text-white/30 mt-0.5">{total} registered users</p>
-        </div>
+    <div className="space-y-4 max-w-6xl">
+      <AnimatePresence>{editUser && <RoleModal user={editUser} onClose={() => setEditUser(null)} onUpdated={handleRoleUpdated} />}{deleteUser && <DeleteModal user={deleteUser} onClose={() => setDeleteUser(null)} onDeleted={handleDeleted} />}{detailUser && <UserDetailModal user={detailUser} onClose={() => setDetailUser(null)} onRefresh={fetchUsers} />}</AnimatePresence>
+      <div><h2 className="text-lg font-semibold text-gray-900">Users</h2><p className="text-sm text-gray-500 mt-0.5">{total} registered</p></div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-white border border-gray-200 rounded-lg p-3"><p className="text-xl font-bold text-gray-900">{total}</p><p className="text-xs text-gray-500 mt-0.5">Total</p></div>
+        <div className="bg-white border border-gray-200 rounded-lg p-3"><p className="text-xl font-bold text-gray-900">{users.filter(u => u.role === 'admin').length}</p><p className="text-xs text-gray-500 mt-0.5">Admins</p></div>
+        <div className="bg-white border border-gray-200 rounded-lg p-3"><p className="text-xl font-bold text-gray-900">{users.filter(u => u.role === 'moderator').length}</p><p className="text-xs text-gray-500 mt-0.5">Moderators</p></div>
       </div>
 
-      {/* Quick stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {stats.map(s => (
-          <div key={s.label} className="rounded-xl border p-4" style={cardStyle}>
-            <p className="text-2xl font-bold text-white tabular-nums">{s.value}</p>
-            <p className="text-xs text-white/40 mt-1">{s.label}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Search */}
       <div className="relative max-w-xs">
-        <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input
-          type="text" placeholder="Search users…" value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="w-full pl-8 pr-3 py-2 rounded-lg text-sm text-white/80 placeholder-white/20 outline-none"
-          style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
-          onFocus={e => e.target.style.borderColor = 'rgba(139,92,246,0.5)'}
-          onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.08)'}
-        />
+        <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" placeholder="Search users…" value={search} onChange={e => setSearch(e.target.value)}
+          className="w-full pl-8 pr-3 py-1.5 rounded-md text-sm text-gray-800 placeholder-gray-400 bg-white border border-gray-200 outline-none focus:border-gray-400 transition-colors" />
       </div>
 
-      {/* Users table */}
-      <div className="rounded-xl border overflow-hidden" style={cardStyle}>
-        <div className="grid grid-cols-[2fr_2fr_100px_110px_80px_60px] gap-3 px-5 py-3 border-b text-[11px] font-semibold text-white/25 uppercase tracking-wider" style={rowStyle}>
-          <span>Name</span><span>Email</span><span>Role</span><span>Joined</span><span>Actions</span><span></span>
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead><tr className="bg-gray-50 border-b border-gray-200">
+              <th className={th}>Name</th><th className={th}>Email</th><th className={th}>Points / Tier</th><th className={th}>Role</th><th className={th}>Joined</th><th className={`${th} text-right`}>Actions</th>
+            </tr></thead>
+            <tbody>
+              {loading ? <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-400">Loading…</td></tr> :
+               users.length === 0 ? <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-400">No users found</td></tr> :
+               users.map(u => {
+                 const tier = u.tier || 'newcomer';
+                 return (
+                <tr key={u._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
+                  <td className={td}><button onClick={() => setDetailUser(u)} className="flex items-center gap-2 hover:opacity-80 cursor-pointer text-left"><div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-semibold text-gray-600">{u.name?.[0]?.toUpperCase()}</div><span className="font-medium text-gray-900">{u.name}</span></button></td>
+                  <td className={`${td} text-gray-500`}>{u.email}</td>
+                  <td className={td}><div className="flex items-center gap-1"><span className="text-sm font-medium text-gray-900">{u.points ?? 0}</span><span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${TIER_COLORS[tier]}`}>{TIER_ICONS[tier]}</span></div></td>
+                  <td className={td}><Badge status={u.role === 'admin' ? 'admin' : u.role === 'moderator' ? 'moderator' : 'user'} label={u.role} /></td>
+                  <td className={`${td} text-gray-500`}>{new Date(u.createdAt).toLocaleDateString('en-IN')}</td>
+                  <td className={`${td} text-right`}>
+                    <button onClick={() => setDetailUser(u)} className="px-2.5 py-1 rounded-md text-[10px] text-gray-600 border border-gray-200 hover:border-gray-400 hover:text-gray-900 transition-colors mr-1">Detail</button>
+                    <button onClick={() => setEditUser(u)} className="px-2.5 py-1 rounded-md text-[10px] text-gray-600 border border-gray-200 hover:border-gray-400 hover:text-gray-900 transition-colors mr-1">Edit</button>
+                    <button onClick={() => setDeleteUser(u)} className="px-2.5 py-1 rounded-md text-[10px] text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">Delete</button>
+                  </td>
+                </tr>
+                 );
+               })}
+            </tbody>
+          </table>
         </div>
-
-        {loading ? (
-          <div className="py-6 space-y-2 px-5">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="flex gap-4 items-center">
-                <div className="w-8 h-8 rounded-full bg-white/[0.04]" />
-                <div className="flex-1 h-4 rounded bg-white/[0.04]" />
-                <div className="w-24 h-5 rounded bg-white/[0.04]" />
-                <div className="w-16 h-4 rounded bg-white/[0.04]" />
-              </div>
-            ))}
-          </div>
-        ) : users.length === 0 ? (
-          <div className="py-16 text-center">
-            <p className="text-sm text-white/30">No users found</p>
-          </div>
-        ) : (
-          users.map((u, i) => (
-            <motion.div
-              key={u._id}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: i * 0.03 }}
-              className="grid grid-cols-[2fr_2fr_100px_110px_80px_60px] gap-3 px-5 py-3.5 border-b items-center hover:bg-white/[0.02] transition-colors"
-              style={rowStyle}
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
-                  style={{ background: 'linear-gradient(135deg, #8b5cf6, #3b82f6)' }}>
-                  {u.name?.[0]?.toUpperCase()}
-                </div>
-                <span className="text-sm text-white/70 truncate font-medium">{u.name}</span>
-              </div>
-              <span className="text-xs text-white/40 truncate">{u.email}</span>
-              <div><Badge status={(roleColors[u.role] || 'default') as 'admin' | 'moderator' | 'user' | 'default'} label={u.role} /></div>
-              <span className="text-xs text-white/30">{new Date(u.createdAt).toLocaleDateString('en-IN')}</span>
-
-              {/* Actions */}
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setEditUser(u)}
-                  title="Change role"
-                  className="px-2.5 py-1.5 rounded-lg text-[11px] text-white/40 border border-white/8 hover:border-violet-500/40 hover:text-violet-300 transition-colors">
-                  Edit
-                </button>
-                <button
-                  onClick={() => setDeleteUser(u)}
-                  title="Delete user"
-                  className="p-1.5 rounded-lg text-white/25 hover:text-red-400 hover:bg-red-500/10 transition-colors">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
-                  </svg>
-                </button>
-              </div>
-              <span className="text-xs text-white/25">{timeAgo(u.updatedAt)}</span>
-            </motion.div>
-          ))
-        )}
-
-        {pages > 1 && (
-          <div className="flex items-center justify-between px-5 py-3 border-t text-xs text-white/30" style={rowStyle}>
-            <span>Page {page} of {pages}</span>
-            <div className="flex gap-1">
-              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                className="px-3 py-1.5 rounded-lg hover:bg-white/[0.05] disabled:opacity-30 transition-colors">← Prev</button>
-              <button onClick={() => setPage(p => Math.min(pages, p + 1))} disabled={page === pages}
-                className="px-3 py-1.5 rounded-lg hover:bg-white/[0.05] disabled:opacity-30 transition-colors">Next →</button>
-            </div>
-          </div>
-        )}
+        {pages > 1 && <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 text-sm text-gray-500"><span>Page {page} of {pages}</span><div className="flex gap-1"><button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 rounded-md hover:bg-gray-100 disabled:opacity-30">← Prev</button><button onClick={() => setPage(p => Math.min(pages, p + 1))} disabled={page === pages} className="px-3 py-1 rounded-md hover:bg-gray-100 disabled:opacity-30">Next →</button></div></div>}
       </div>
-
-      {/* Modals */}
-      <AnimatePresence>
-        {editUser && (
-          <RoleModal
-            user={editUser}
-            onClose={() => setEditUser(null)}
-            onUpdated={handleRoleUpdated}
-          />
-        )}
-        {deleteUser && (
-          <DeleteModal
-            user={deleteUser}
-            onClose={() => setDeleteUser(null)}
-            onDeleted={handleDeleted}
-          />
-        )}
-      </AnimatePresence>
     </div>
   );
 }

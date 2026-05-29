@@ -5,35 +5,47 @@ const commentSchema = new MongooseSchema(
   {
     author: {
       type: MongooseSchema.Types.ObjectId,
-      ref: 'User', // Establishes a relationship to the User collection
+      ref: 'User',
       required: true,
     },
     body: {
       type: String,
       required: true,
       trim: true,
-      maxlength: 1000, // Enforces a reasonable limit to prevent database bloat
+      maxlength: 1000,
     },
     upvotes: {
       type: [MongooseSchema.Types.ObjectId],
       ref: 'User',
-      default: [], // Stores IDs of users who upvoted (🤌🔥) this comment
+      default: [],
     },
     downvotes: {
       type: [MongooseSchema.Types.ObjectId],
       ref: 'User',
-      default: [], // Stores IDs of users who downvoted (🥀🧊) this comment
+      default: [],
     },
     verified: {
       type: Boolean,
-      default: false, // Moderators can mark a comment as the verified "top answer"
+      default: false,
     },
     isExpertAnswer: {
       type: Boolean,
-      default: false, // Set to true when a moderator/expert writes this comment as an official answer
+      default: false,
+    },
+    parentId: {
+      type: MongooseSchema.Types.ObjectId,
+      default: null,
+    },
+    depth: {
+      type: Number,
+      default: 0,
+    },
+    replies: {
+      type: mongoose.Schema.Types.Mixed,
+      default: undefined,
     },
   },
-  { timestamps: true } // Automatically adds createdAt and updatedAt to each comment
+  { timestamps: true }
 );
 
 // Community post status enum
@@ -41,12 +53,16 @@ export type CommunityPostStatus = 'answered' | 'unanswered';
 
 // Interface for a comment embedded in a post
 export interface IComment {
+  _id: Types.ObjectId;
   author: Types.ObjectId;
   body: string;
   upvotes: Types.ObjectId[];
   downvotes: Types.ObjectId[];
   verified: boolean;
   isExpertAnswer: boolean;
+  parentId: Types.ObjectId | null;
+  depth: number;
+  replies: IComment[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -69,7 +85,7 @@ const communityPostSchema = new MongooseSchema(
   {
     title: {
       type: String,
-      required: [true, 'Title is required'], // Custom error message
+      required: [true, 'Title is required'],
       trim: true,
     },
     body: {
@@ -84,30 +100,30 @@ const communityPostSchema = new MongooseSchema(
     },
     status: {
       type: String,
-      enum: ['answered', 'unanswered'] as CommunityPostStatus[], // Restricts values to only these two options
+      enum: ['answered', 'unanswered'] as CommunityPostStatus[],
       default: 'unanswered',
     },
     answer: {
       type: String,
-      default: null, // Stores the official/accepted answer text
+      default: null,
     },
     answerIsExpert: {
       type: Boolean,
-      default: false, // Set to true when a moderator/expert resolves the post
+      default: false,
     },
     upvotes: {
       type: [MongooseSchema.Types.ObjectId],
       ref: 'User',
-      default: [], // Stores IDs of users who upvoted to prevent double-voting
+      default: [],
     },
     comments: {
-      type: [commentSchema], // Embeds the comment sub-schema defined above
+      type: [commentSchema],
       default: [],
     },
     embedding: {
-      type: [Number], // Stores high-dimensional vector arrays for AI semantic search
+      type: [Number],
       default: undefined,
-      select: false, // EXCELLENT optimization: hides this heavy field from standard queries by default
+      select: false,
     },
   },
   { timestamps: true }

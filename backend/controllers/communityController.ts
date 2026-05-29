@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { Types } from 'mongoose';
-import CommunityPost, { ICommunityPost } from '../models/CommunityPost.js';
+import CommunityPost, { ICommunityPost, IComment } from '../models/CommunityPost.js';
 import { generateEmbedding } from '../utils/embeddings.js';
 import User, { IUser } from '../models/User.js';
 import { invalidateCache } from '../utils/cache.js';
@@ -12,6 +12,33 @@ declare global {
       user?: IUser;
     }
   }
+}
+
+/** Build a nested comment tree from a flat comments array */
+function buildCommentTree(flat: IComment[]): IComment[] {
+  const map = new Map<string, IComment>();
+  const roots: IComment[] = [];
+
+  // Clone each comment so we can mutate safely
+  for (const c of flat) {
+    map.set(c._id.toString(), { ...c, replies: [] });
+  }
+
+  for (const c of flat) {
+    const node = map.get(c._id.toString())!;
+    if (node.parentId) {
+      const parent = map.get(node.parentId.toString());
+      if (parent) {
+        parent.replies.push(node);
+      } else {
+        roots.push(node); // Orphaned reply — treat as root
+      }
+    } else {
+      roots.push(node);
+    }
+  }
+
+  return roots;
 }
 
 // GET /api/community — All posts (paginated)
@@ -44,10 +71,9 @@ export const getAllPosts = async (req: Request, res: Response): Promise<void> =>
   }
 };
 
-// GET /api/community/:id — Single post
+// GET /api/community/:id — Single post with nested comment tree
 export const getPostById = async (req: Request, res: Response): Promise<void> => {
   try {
-    // Fetch specific post by ID, excluding embeddings and joining author data
     const post = await CommunityPost.findById(req.params.id)
       .select('-embedding')
       .populate('author', 'name')
@@ -57,7 +83,43 @@ export const getPostById = async (req: Request, res: Response): Promise<void> =>
       res.status(404).json({ message: 'Post not found.' });
       return;
     }
-    res.json(post);
+
+    // Attach nested replies tree to the response
+    const postObj = post.toObject();
+    (postObj as any).comments = buildCommentTree(post.comments as unknown as IComment[]);
+
+    res.json(postObj);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: (error as Error).message });
+  }
+};
+
+// GET /api/community/answers/list — Paginated list of posts with an official expert answer
+export const getAnswersList = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(50, Math.max(0, parseInt(req.query.limit as string) || 20));
+    const skip = (page - 1) * limit;
+
+    const filter = { status: 'answered' };
+
+    const total = await CommunityPost.countDocuments(filter);
+
+    const posts = await CommunityPost.find(filter)
+      .select('-embedding')
+      .populate('author', 'name')
+      .sort({ updatedAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    res.json({
+      posts,
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit),
+      hasMore: skip + posts.length < total,
+    });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: (error as Error).message });
   }
@@ -131,12 +193,13 @@ export const toggleUpvote = async (req: Request, res: Response): Promise<void> =
   }
 };
 
-// POST /api/community/:id/comments — Add a comment
+// POST /api/community/:id/comments — Add a comment or reply to another comment
+// Query param: ?parentId=<commentId> to reply to a specific comment
 export const addComment = async (req: Request, res: Response): Promise<void> => {
   try {
     const { body } = req.body as { body?: string };
+    const { parentId } = req.query as { parentId?: string };
 
-    // Ensure the comment isn't empty or just whitespace
     if (!body || !body.trim()) {
       res.status(400).json({ message: 'Comment body is required.' });
       return;
@@ -148,16 +211,37 @@ export const addComment = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    // Push the new comment to the array and save the post
-    // Note: Mongoose subdocument applies defaults for upvotes, downvotes, verified, timestamps
-    post.comments.push({ author: req.user!._id, body: body.trim() } as any);
+    // Resolve parent comment if this is a reply
+    let resolvedParent: any = null;
+    if (parentId) {
+      resolvedParent = (post.comments as any).id(parentId);
+      if (!resolvedParent) {
+        res.status(404).json({ message: 'Parent comment not found.' });
+        return;
+      }
+      if (resolvedParent.depth >= 3) {
+        res.status(400).json({ message: 'Maximum reply depth (3) reached. Cannot nest deeper.' });
+        return;
+      }
+    }
+
+    // Build comment object with parentId and depth for replies
+    const commentObj: Record<string, unknown> = { author: req.user!._id, body: body.trim() };
+    if (resolvedParent) {
+      commentObj.parentId = new Types.ObjectId(parentId);
+      commentObj.depth = resolvedParent.depth + 1;
+    } else {
+      commentObj.parentId = null;
+      commentObj.depth = 0;
+    }
+
+    post.comments.push(commentObj as any);
     await post.save();
 
-    // Hydrate the newly added comment's author data for the frontend
     await post.populate('comments.author', 'name');
     const newComment = post.comments[post.comments.length - 1];
 
-    // Notify the post author that someone commented on their post
+    // Notify post author
     if (post.author.toString() !== req.user!._id.toString()) {
       import('./notificationController.js').then(n =>
         n.createNotification({
@@ -165,6 +249,19 @@ export const addComment = async (req: Request, res: Response): Promise<void> => 
           type: 'comment_replied',
           title: 'New comment on your post',
           message: `${req.user!.name} commented on "${post.title}": "${body.trim().slice(0, 80)}${body.trim().length > 80 ? '…' : ''}"`,
+          link: `/community?post=${post._id}`,
+        })
+      ).catch(() => {});
+    }
+
+    // Notify parent comment author
+    if (resolvedParent && resolvedParent.author.toString() !== req.user!._id.toString()) {
+      import('./notificationController.js').then(n =>
+        n.createNotification({
+          recipient: resolvedParent.author,
+          type: 'comment_replied',
+          title: 'Someone replied to your comment',
+          message: `${req.user!.name} replied: "${body.trim().slice(0, 80)}${body.trim().length > 80 ? '…' : ''}"`,
           link: `/community?post=${post._id}`,
         })
       ).catch(() => {});

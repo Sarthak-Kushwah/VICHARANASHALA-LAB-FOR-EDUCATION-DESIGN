@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import Navbar from '../components/layout/Navbar';
 import Footer from '../components/layout/Footer';
 import CommunityPostCard from '../components/ui/CommunityPostCard';
+import ThreadDetail from '../components/ui/ThreadDetail';
 import Avatar from '../components/ui/Avatar';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
@@ -659,8 +660,19 @@ export default function CommunityPage() {
   const [searchResults, setSearchResults] = useState<Post[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
 
-  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+
+  // Thread detail: when a post ID is set, show ThreadDetail instead of the list/dialog
+  const handleOpenThread = useCallback((postId: string) => {
+    setSelectedPostId(postId);
+  }, []);
+
+  const handleCloseThread = useCallback(() => {
+    setSelectedPostId(null);
+    // Refresh the list to pick up any new comments/upvotes
+    fetchPosts(page, filter, sort, search);
+  }, [page, filter, sort, search]);
 
   // If navigated here via ?ask=true (from navbar "Ask Question") or ?post=<id> (from search)
   useEffect(() => {
@@ -675,7 +687,7 @@ export default function CommunityPage() {
       // Find the post in the already-loaded posts or fetch it
       const found = posts.find((p) => p._id === postId);
       if (found) {
-        setSelectedPost(found);
+        setSelectedPostId(postId);
       }
       // Clean the URL param so refresh doesn't re-trigger
       window.history.replaceState({}, '', window.location.pathname);
@@ -747,7 +759,7 @@ export default function CommunityPage() {
   };
 
   const handleCloseDetail = () => {
-    setSelectedPost(null);
+    setSelectedPostId(null);
   };
 
   const visible = (() => {
@@ -902,7 +914,7 @@ export default function CommunityPage() {
               <CommunityPostCard
                 key={post._id}
                 post={post}
-                onClick={setSelectedPost}
+                onClick={(p) => handleOpenThread(p._id)}
                 currentUserId={user?._id || user?.id}
               />
             ))}
@@ -929,13 +941,14 @@ export default function CommunityPage() {
 
       <Footer />
 
-      {selectedPost && (
-        <PostDetailDialog
-          post={selectedPost}
-          onClose={handleCloseDetail}
-          currentUserId={user?._id || user?.id || ''}
-          userRole={user?.role || ''}
-        />
+      {/* Thread detail — full-page overlay replaces the list view */}
+      {selectedPostId && (
+        <div className="fixed inset-0 z-40 bg-bg overflow-y-auto">
+          <ThreadDetail
+            postId={selectedPostId}
+            onBack={handleCloseDetail}
+          />
+        </div>
       )}
 
       {showCreate && (

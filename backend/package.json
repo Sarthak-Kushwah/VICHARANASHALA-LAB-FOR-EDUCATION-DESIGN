@@ -8,12 +8,16 @@
     "start": "tsx server.ts",
     "dev": "tsx watch server.ts",
     "build": "tsc",
-    "migrate": "tsx scripts/addIndexes.js",
-    "seed": "tsx scripts/seed.js",
-    "seed:posts": "tsx scripts/seedPosts.js",
-    "backfill:embeddings": "tsx scripts/backfillEmbeddings.js",
+    "migrate": "tsx scripts/addIndexes.ts",
+    "seed": "tsx scripts/seed.ts",
+    "seed:posts": "tsx scripts/seedPosts.ts",
+    "backfill:embeddings": "tsx scripts/backfillEmbeddings.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "seed:search-logs": "tsx scripts/seedSearchLogs.ts",
+    "seed:badges": "tsx scripts/seedBadges.ts",
+    "add:post": "tsx scripts/addPost.ts",
+    "backfill:community": "tsx scripts/backfillCommunityEmbeddings.ts"
   },
   "dependencies": {
     "@sentry/node": "^10.55.0",

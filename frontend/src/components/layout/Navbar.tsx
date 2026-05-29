@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import NotificationBell from '../../components/ui/NotificationBell';
 
@@ -22,6 +22,7 @@ function getAvatarColor(name?: string): string {
 export default function Navbar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -46,6 +47,7 @@ export default function Navbar() {
 
   const initials = user?.name ? user.name.charAt(0).toUpperCase() : '?';
   const avatarColor = getAvatarColor(user?.name);
+  const isCommunityActive = location.pathname === '/community';
 
   return (
     <header
@@ -90,12 +92,14 @@ export default function Navbar() {
         {/* Right Side */}
         <div className="flex items-center gap-2 flex-shrink-0">
 
-          <button
-            onClick={() => navigate('/community?ask=true')}
-            className="hidden lg:flex items-center px-5 py-[7px] text-[0.82rem] font-semibold text-ink bg-transparent border-[1.5px] border-ink rounded-full cursor-pointer transition-all duration-300 ease-smooth tracking-[0.01em] leading-none hover:bg-ink hover:text-white hover:shadow-[0_4px_16px_rgba(0,0,0,0.15)] hover:-translate-y-px active:translate-y-0"
-          >
-            Ask Question
-          </button>
+          {!isCommunityActive && (
+            <button
+              onClick={() => navigate('/community?ask=true')}
+              className="hidden lg:flex items-center px-5 py-[7px] text-[0.82rem] font-semibold text-ink bg-transparent border-[1.5px] border-ink rounded-full cursor-pointer transition-all duration-300 ease-smooth tracking-[0.01em] leading-none hover:bg-ink hover:text-white hover:shadow-[0_4px_16px_rgba(0,0,0,0.15)] hover:-translate-y-px active:translate-y-0"
+            >
+              Ask Question
+            </button>
+          )}
 
           <div className="hidden lg:block w-px h-6 bg-border mx-1" />
 
@@ -200,12 +204,14 @@ export default function Navbar() {
             </NavLink>
           ))}
           <div className="flex gap-2 mt-3">
-            <button
-              onClick={() => { navigate('/community?ask=true'); setMobileOpen(false); }}
-              className="flex-1 py-2.5 px-4 text-sm font-semibold text-ink bg-transparent border-[1.5px] border-ink rounded-full cursor-pointer transition-all hover:bg-ink hover:text-white"
-            >
-              Ask Question
-            </button>
+            {!isCommunityActive && (
+              <button
+                onClick={() => { navigate('/community?ask=true'); setMobileOpen(false); }}
+                className="flex-1 py-2.5 px-4 text-sm font-semibold text-ink bg-transparent border-[1.5px] border-ink rounded-full cursor-pointer transition-all hover:bg-ink hover:text-white"
+              >
+                Ask Question
+              </button>
+            )}
           </div>
         </div>
       </div>

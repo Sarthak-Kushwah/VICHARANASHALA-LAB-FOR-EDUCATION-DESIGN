@@ -12,12 +12,11 @@ import Spinner from './components/ui/Spinner';
 import AdminLogin from './admin/pages/AdminLogin';
 import AdminDashboard from './admin/pages/AdminDashboard';
 import AdminFAQs from './admin/pages/AdminFAQs';
-import AdminAnalytics from './admin/pages/AdminAnalytics';
 import AdminUsers from './admin/pages/AdminUsers';
-import AdminSearch from './admin/pages/AdminSearch';
-import AdminReports from './admin/pages/AdminReports';
 import AdminSettings from './admin/pages/AdminSettings';
 import AdminCommunity from './admin/pages/AdminCommunity';
+import AdminModeration from './admin/pages/AdminModeration';
+import AdminLeaderboard from './admin/pages/AdminLeaderboard';
 import AdminLayout from './admin/components/layout/AdminLayout';
 
 interface ProtectedRouteProps {
@@ -95,12 +94,11 @@ function AppRoutes() {
       <Route path="/admin/login" element={<AdminLogin />} />
       <Route path="/admin" element={<AdminRoute><AdminLayout><AdminDashboard /></AdminLayout></AdminRoute>} />
       <Route path="/admin/faqs" element={<AdminRoute><AdminLayout><AdminFAQs /></AdminLayout></AdminRoute>} />
-      <Route path="/admin/analytics" element={<AdminRoute><AdminLayout><AdminAnalytics /></AdminLayout></AdminRoute>} />
       <Route path="/admin/users" element={<AdminRoute><AdminLayout><AdminUsers /></AdminLayout></AdminRoute>} />
-      <Route path="/admin/search" element={<AdminRoute><AdminLayout><AdminSearch /></AdminLayout></AdminRoute>} />
-      <Route path="/admin/reports" element={<AdminRoute><AdminLayout><AdminReports /></AdminLayout></AdminRoute>} />
       <Route path="/admin/settings" element={<AdminRoute><AdminLayout><AdminSettings /></AdminLayout></AdminRoute>} />
       <Route path="/admin/community" element={<AdminRoute><AdminLayout><AdminCommunity /></AdminLayout></AdminRoute>} />
+      <Route path="/admin/moderation" element={<AdminRoute><AdminLayout><AdminModeration /></AdminLayout></AdminRoute>} />
+      <Route path="/admin/leaderboard" element={<AdminRoute><AdminLayout><AdminLeaderboard /></AdminLayout></AdminRoute>} />
 
       {/* Catch-all fallback: Redirect any unknown URLs to the home page */}
       <Route path="*" element={<Navigate to="/" replace />} />

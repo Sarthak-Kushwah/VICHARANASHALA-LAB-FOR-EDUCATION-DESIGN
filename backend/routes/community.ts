@@ -11,6 +11,7 @@ import {
   toggleCommentDownvote,
   verifyComment,
   getSolvedPosts,
+  getAnswersList,
   requestExpertHelp,
 } from '../controllers/communityController.js';
 import { searchCommunityPosts } from '../controllers/communitySearchController.js';
@@ -20,6 +21,7 @@ const router = Router();
 
 router.get('/search', protect, searchCommunityPosts);
 router.get('/solved', getSolvedPosts); // public endpoint for "Top Solved Today" widget
+router.get('/answers/list', protect, getAnswersList); // paginated expert answers feed
 
 router.get('/', protect, getAllPosts);
 router.get('/:id', protect, getPostById);

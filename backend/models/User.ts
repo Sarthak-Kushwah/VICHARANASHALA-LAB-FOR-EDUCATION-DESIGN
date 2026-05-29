@@ -1,65 +1,144 @@
 import mongoose, { Document, Schema as MongooseSchema } from 'mongoose';
 import bcrypt from 'bcryptjs';
 
-// User roles enum
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
 export type UserRole = 'user' | 'moderator' | 'admin' | 'ai_moderator' | 'expert';
 
-// Interface for the User document
+export type Tier = 'newcomer' | 'bronze' | 'silver' | 'gold' | 'platinum' | 'legend';
+
+export type ReputationAction =
+  | 'faq_post'
+  | 'faq_approved'
+  | 'faq_helpful'
+  | 'answer_accepted'
+  | 'upvote_received'
+  | 'report_valid'
+  | 'badge_awarded'
+  | 'admin_point_award'
+  | 'faq_rejected'
+  | 'answer_downvoted'
+  | 'report_rejected'
+  | 'badge_revoked'
+  | 'admin_point_deduct';
+
+// ─── Badge subdocument ────────────────────────────────────────────────────────
+
+export interface IUserBadge {
+  badgeId: mongoose.Types.ObjectId;
+  awardedAt?: Date;
+  awardedBy?: mongoose.Types.ObjectId;
+  reason?: string;
+}
+
 export interface IUser extends Document {
   name: string;
   email: string;
   password: string;
   role: UserRole;
+  createdAt?: Date;
+  updatedAt?: Date;
+  // Reputation system
+  reputation: number;
+  points: number;
+  tier: Tier;
+  positiveBadges: IUserBadge[];
+  negativeBadges: IUserBadge[];
+  // Moderation
+  isBanned: boolean;
+  banReason?: string;
+  bannedAt?: Date;
+  bannedBy?: mongoose.Types.ObjectId;
+  suspendedUntil?: Date;
+  isDeleted: boolean;
+  deletedAt?: Date;
+  // Methods
   comparePassword(candidatePassword: string): Promise<boolean>;
 }
 
-// Main schema for User accounts
-const userSchema = new MongooseSchema(
+// ─── Tier thresholds ──────────────────────────────────────────────────────────
+
+export const TIER_THRESHOLDS: Record<Tier, number> = {
+  newcomer: 0,
+  bronze: 50,
+  silver: 200,
+  gold: 500,
+  platinum: 1000,
+  legend: 2500,
+};
+
+export const TIER_ORDER: Tier[] = ['newcomer', 'bronze', 'silver', 'gold', 'platinum', 'legend'];
+
+export function calculateTier(points: number): Tier {
+  let tier: Tier = 'newcomer';
+  for (const t of TIER_ORDER) {
+    if (points >= TIER_THRESHOLDS[t]) tier = t;
+    else break;
+  }
+  return tier;
+}
+
+// ─── Schema ──────────────────────────────────────────────────────────────────
+
+const userSchema = new MongooseSchema<IUser>(
   {
-    name: {
-      type: String,
-      required: [true, 'Name is required'],
-      trim: true,
-    },
-    email: {
-      type: String,
-      required: [true, 'Email is required'],
-      unique: true, // Prevents duplicate accounts
-      lowercase: true,
-      trim: true,
-      match: [/^\S+@\S+\.\S+$/, 'Please enter a valid email'], // Basic regex to enforce email format
-    },
-    password: {
-      type: String,
-      required: [true, 'Password is required'],
-      minlength: [6, 'Password must be at least 6 characters'],
-      select: false, // EXCELLENT security measure: hides password from normal database queries
-    },
-    role: {
-      type: String,
-      enum: ['user', 'moderator', 'admin', 'ai_moderator', 'expert'] as UserRole[], // Strict role-based access control (RBAC)
-      default: 'user',
-    },
+    name: { type: String, required: true, trim: true },
+    email: { type: String, required: true, unique: true, lowercase: true, trim: true,
+      match: [/^\S+@\S+\.\S+$/, 'Please enter a valid email'] },
+    password: { type: String, required: true, minlength: 6, select: false },
+    role: { type: String, enum: ['user', 'moderator', 'admin', 'ai_moderator', 'expert'] as UserRole[], default: 'user' },
+
+    // Reputation
+    reputation: { type: Number, default: 0, min: 0 },
+    points: { type: Number, default: 0, min: 0 },
+    tier: { type: String, enum: ['newcomer', 'bronze', 'silver', 'gold', 'platinum', 'legend'] as Tier[], default: 'newcomer' },
+    positiveBadges: [{
+      badgeId: { type: MongooseSchema.Types.ObjectId, ref: 'Badge' },
+      awardedAt: { type: Date, default: Date.now },
+      awardedBy: { type: MongooseSchema.Types.ObjectId, ref: 'User' },
+      reason: { type: String },
+    }],
+    negativeBadges: [{
+      badgeId: { type: MongooseSchema.Types.ObjectId, ref: 'Badge' },
+      awardedAt: { type: Date, default: Date.now },
+      awardedBy: { type: MongooseSchema.Types.ObjectId, ref: 'User' },
+      reason: { type: String },
+    }],
+
+    // Moderation
+    isBanned: { type: Boolean, default: false },
+    banReason: { type: String },
+    bannedAt: { type: Date },
+    bannedBy: { type: MongooseSchema.Types.ObjectId, ref: 'User' },
+    suspendedUntil: { type: Date },
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date },
   },
   { timestamps: true }
 );
 
-// Mongoose Pre-Save Hook: Automatically hashes the password before saving it to the database
-userSchema.pre('save', async function (next) {
-  // Skip the hashing process if the user is just updating their name or email
-  if (!this.isModified('password')) return next();
+// ─── Pre-save ────────────────────────────────────────────────────────────────
 
-  // Generate a secure salt and hash the password (factor of 12 strikes a good balance between security and speed)
+userSchema.pre('save', async function (next) {
+  if (!this.isModified('password')) return next();
   const salt = await bcrypt.genSalt(12);
   this.password = await bcrypt.hash(this.password, salt);
-
   next();
 });
 
-// Instance Method: Safely compares a provided login password against the hashed password stored in the DB
+// ─── Methods ────────────────────────────────────────────────────────────────
+
 userSchema.methods.comparePassword = async function (candidatePassword: string): Promise<boolean> {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-// Export the model, explicitly defining the target collection name ('yaksha_faq_users')
+// ─── Indexes ────────────────────────────────────────────────────────────────
+
+userSchema.index({ points: -1 });
+userSchema.index({ reputation: -1 });
+userSchema.index({ tier: 1 });
+userSchema.index({ isBanned: 1 });
+userSchema.index({ isDeleted: 1 });
+userSchema.index({ email: 1 });
+
 export default mongoose.model<IUser>('User', userSchema, 'yaksha_faq_users');

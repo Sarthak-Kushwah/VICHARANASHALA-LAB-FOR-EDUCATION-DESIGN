@@ -3,6 +3,7 @@ import FAQ, { IFAQ } from '../models/FAQ.js';
 import { generateEmbedding } from '../utils/embeddings.js';
 import { logger } from '../utils/logger.js';
 import { invalidateCache } from '../utils/cache.js';
+import { createTeaDropsForFAQ } from './teaNotificationController.js';
 
 // Query params interface for getAllFAQs
 interface GetAllFAQsQuery {
@@ -174,6 +175,9 @@ export const createFAQ = async (req: Request, res: Response): Promise<void> => {
     // Invalidate search cache so new FAQ appears in results immediately
     await invalidateCache();
 
+    // Fan out tea drops to all non-admin users
+    createTeaDropsForFAQ(faq._id.toString(), question).catch(console.warn);
+
     res.status(201).json({ message: 'FAQ created successfully.', faq });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: (error as Error).message });
@@ -322,5 +326,46 @@ export const submitFeedback = async (req: Request<{ id: string }, {}, { helpful:
     res.json({ helpfulVotes: faq.helpfulVotes, unhelpfulVotes: faq.unhelpfulVotes });
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// POST /api/faq/:id/report — Report an FAQ as inaccurate/outdated
+export const reportFAQ = async (req: Request<{ id: string }, {}, { reason: string }>, res: Response): Promise<void> => {
+  try {
+    const { reason } = req.body;
+    if (!reason || !reason.trim()) {
+      res.status(400).json({ message: 'Reason is required.' });
+      return;
+    }
+    if (reason.trim().length < 10) {
+      res.status(400).json({ message: 'Please provide a more descriptive reason (min 10 chars).' });
+      return;
+    }
+
+    const faq = await FAQ.findById(req.params.id);
+    if (!faq) {
+      res.status(404).json({ message: 'FAQ not found.' });
+      return;
+    }
+
+    // Prevent duplicate reports by the same user
+    const alreadyReported = faq.reports.some(
+      (r) => r.reportedBy.toString() === req.user!._id.toString()
+    );
+    if (alreadyReported) {
+      res.status(409).json({ message: 'You have already reported this FAQ.' });
+      return;
+    }
+
+    faq.reports.push({
+      reportedBy: req.user!._id,
+      reason: reason.trim(),
+      createdAt: new Date(),
+    });
+    await faq.save();
+
+    res.json({ message: 'Report submitted. Thank you for helping keep the FAQ accurate.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: (error as Error).message });
   }
 };

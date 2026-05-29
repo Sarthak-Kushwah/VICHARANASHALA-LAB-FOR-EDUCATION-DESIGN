@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getAllFAQs, getFAQById, createFAQ, updateFAQ, deleteFAQ, checkFAQMatch, getPaginatedFAQs, submitFeedback } from '../controllers/faqController.js';
+import { getAllFAQs, getFAQById, createFAQ, updateFAQ, deleteFAQ, checkFAQMatch, getPaginatedFAQs, submitFeedback, reportFAQ } from '../controllers/faqController.js';
 import { protect, authorize } from '../middleware/auth.js';
 
 const router = Router();
@@ -28,5 +28,8 @@ router.delete('/:id', protect, authorize('admin', 'moderator'), deleteFAQ);
 
 // PATCH /api/faq/:id/feedback — Vote on FAQ helpfulness (any logged-in user)
 router.patch('/:id/feedback', protect, submitFeedback);
+
+// POST /api/faq/:id/report — Report an FAQ as inaccurate/outdated (any logged-in user)
+router.post('/:id/report', protect, reportFAQ);
 
 export default router;

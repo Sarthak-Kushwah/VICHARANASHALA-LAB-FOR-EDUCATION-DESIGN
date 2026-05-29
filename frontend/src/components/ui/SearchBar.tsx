@@ -106,10 +106,15 @@ const SearchBar = React.forwardRef<HTMLInputElement, SearchBarProps>(function Se
     handleSearch(query);
   };
 
-  const handleSuggestionClick = (faqId: string) => {
+  const handleSuggestionClick = async (faqId: string) => {
     setShowSuggestions(false);
     setSuggestions([]);
-    navigate(`/faq/${faqId}`);
+    // Fetch the FAQ item and store in sessionStorage so the FAQ page can highlight it
+    try {
+      const res = await api.get<{ _id: string; question: string; answer: string; category: string }>(`/faq/${faqId}`);
+      sessionStorage.setItem('yaksha_faq_highlight', JSON.stringify(res.data));
+    } catch {}
+    navigate(`/faq`);
   };
 
   // Close suggestions on outside click

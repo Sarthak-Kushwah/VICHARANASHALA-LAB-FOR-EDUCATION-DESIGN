@@ -14,6 +14,9 @@ import searchRoutes from './routes/search.js';
 import adminRoutes from './routes/admin.js';
 import analyticsRoutes from './routes/analytics.js';
 import notificationRoutes from './routes/notification.js';
+import teaRoutes from './routes/tea.js';
+import reputationRoutes from './routes/reputation.js';
+import moderationRoutes from './routes/moderation.js';
 import { logger } from './utils/logger.js';
 import * as Sentry from '@sentry/node';
 import { expressIntegration } from '@sentry/node';
@@ -118,8 +121,11 @@ app.use('/api/faq', faqRoutes);
 app.use('/api/community', communityRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/reputation', reputationRoutes);
+app.use('/api/moderation', moderationRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/notifications/tea', teaRoutes);
 
 // 6. Health Check Endpoint
 // Useful for deployment platforms (like Vercel/AWS) to verify the server is alive

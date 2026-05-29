@@ -1,9 +1,7 @@
 import mongoose, { Document, Schema as MongooseSchema, Types } from 'mongoose';
 
-// FAQ status enum
 export type FAQStatus = 'pending' | 'approved' | 'rejected';
 
-// Interface for the FAQ document
 export interface IFAQ extends Document {
   question: string;
   answer: string;
@@ -15,11 +13,15 @@ export interface IFAQ extends Document {
   helpfulVotes: number;
   unhelpfulVotes: number;
   createdBy: Types.ObjectId | null;
+  reports: Array<{
+    reportedBy: Types.ObjectId;
+    reason: string;
+    createdAt?: Date; // Mongoose applies default automatically
+  }>;
   createdAt: Date;
   updatedAt: Date;
 }
 
-// Main schema for Frequently Asked Questions
 const faqSchema = new MongooseSchema(
   {
     question: {
@@ -34,15 +36,15 @@ const faqSchema = new MongooseSchema(
     category: {
       type: String,
       required: [true, 'Category is required'],
-      trim: true, // Used to group FAQs together on the frontend
+      trim: true,
     },
     embedding: {
-      type: [Number], // Stores high-dimensional vector arrays for AI semantic search
+      type: [Number],
       default: undefined,
-      select: false,  // EXCELLENT optimization: hides this heavy data from standard queries
+      select: false,
     },
     searchCount: {
-      type: Number,   // Analytics tracker to easily identify popular FAQs
+      type: Number,
       default: 0,
     },
     status: {
@@ -67,12 +69,18 @@ const faqSchema = new MongooseSchema(
       ref: 'User',
       default: null,
     },
+    reports: {
+      type: [{
+        reportedBy: { type: MongooseSchema.Types.ObjectId, ref: 'User' },
+        reason: { type: String, trim: true },
+        createdAt: { type: Date, default: Date.now },
+      }],
+      default: [],
+    },
   },
-  { timestamps: true } // Automatically manages 'createdAt' and 'updatedAt' fields
+  { timestamps: true }
 );
 
-// Creates a compound text index to enable traditional MongoDB $text keyword searches
 faqSchema.index({ question: 'text', answer: 'text' });
 
-// Export the model, explicitly defining the target collection name ('yaksha_faq_faqs')
 export default mongoose.model<IFAQ>('FAQ', faqSchema, 'yaksha_faq_faqs');
