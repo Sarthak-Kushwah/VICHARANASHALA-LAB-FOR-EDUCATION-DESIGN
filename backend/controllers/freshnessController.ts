@@ -260,18 +260,30 @@ export const getEscalated = async (_req: Request, res: Response): Promise<void> 
       .sort({ flaggedAt: 1 })
       .lean();
 
-    // Gather votes + suggestions for each
+    // Gather votes + suggestions for each FAQ, scoped to the FAQ's current reviewCycle
     const faqIds = faqs.map((f) => f._id);
     const votes = await FreshReviewVote.aggregate([
-      { $match: { faqId: { $in: faqIds } } },
-      { $group: { _id: { faqId: '$faqId', verdict: '$verdict' }, count: { $sum: 1 } } },
+      {
+        $match: {
+          faqId: { $in: faqIds },
+          // Only count votes from the current review cycle (ignore stale votes from previous cycles)
+          reviewCycle: { $in: faqs.map((f) => f.reviewCycle) },
+        },
+      },
+      {
+        $group: {
+          _id: { faqId: '$faqId', reviewCycle: '$reviewCycle', verdict: '$verdict' },
+          count: { $sum: 1 },
+        },
+      },
     ]);
 
     const suggestions = await FreshReviewVote.find({
       faqId: { $in: faqIds },
       suggestion: { $ne: null },
+      // Include suggestions from all cycles for admin visibility (current + historical)
     })
-      .select('faqId verdict suggestion')
+      .select('faqId reviewCycle verdict suggestion')
       .lean();
 
     const voteMap = new Map<string, { accurate: number; needsUpdate: number }>();

@@ -53,7 +53,6 @@ const faqSchema = new MongooseSchema(
     embedding: {
       type: [Number],
       default: undefined,
-      select: false,
     },
     searchCount: {
       type: Number,

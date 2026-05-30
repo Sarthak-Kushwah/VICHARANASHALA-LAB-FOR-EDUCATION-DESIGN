@@ -18,6 +18,48 @@ const searchCache = new LRUCache<string, SearchResultItem[]>({
   ttl: 1000 * 60 * 60,
 });
 
+// ─── SearchLog Batch Buffer ────────────────────────────────────────────────────
+// Buffers search log entries and flushes them to MongoDB in batches.
+// Avoids a write-per-request on high-traffic deployments.
+interface PendingLog {
+  query: string;
+  resultsCount: number;
+  topResultId: Types.ObjectId | null;
+  topResultSource: 'faq' | 'community' | null;
+  createdAt: Date;
+}
+
+const BATCH_FLUSH_INTERVAL_MS = 5_000; // flush every 5 seconds
+const BATCH_MAX_SIZE = 50;
+const pendingLogs: PendingLog[] = [];
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleFlush(): void {
+  if (flushTimer) return;
+  flushTimer = setTimeout(async () => {
+    flushTimer = null;
+    const logs = pendingLogs.splice(0);
+    if (logs.length === 0) return;
+    try {
+      await SearchLog.insertMany(logs, { ordered: false });
+    } catch {
+      // silently discard failed batch inserts
+    }
+  }, BATCH_FLUSH_INTERVAL_MS);
+}
+
+function bufferSearchLog(entry: Omit<PendingLog, 'createdAt'>): void {
+  pendingLogs.push({ ...entry, createdAt: new Date() });
+  if (pendingLogs.length >= BATCH_MAX_SIZE) {
+    // Immediate flush when buffer is full
+    if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+    const logs = pendingLogs.splice(0);
+    SearchLog.insertMany(logs, { ordered: false }).catch(() => {});
+  } else {
+    scheduleFlush();
+  }
+}
+
 // Helper: Executes traditional MongoDB keyword search
 const runTextSearch = async (collectionName: string, queryStr: string, limit = 5): Promise<SearchResultItem[]> => {
   try {
@@ -135,14 +177,14 @@ export const semanticSearch = async (req: Request, res: Response): Promise<void>
     searchCache.set(normalizedQuery, filtered);
     await setCachedResults(normalizedQuery, filtered);
 
-    // 7. Fire-and-forget: Log search analytics asynchronously (does not block response)
+    // 7. Buffer search log entry for batched async write (non-blocking)
     const topResult = filtered[0] || null;
-    SearchLog.create({
+    bufferSearchLog({
       query,
       resultsCount: filtered.length,
-      topResultId: topResult?._id || null,
-      topResultSource: topResult?.source || null,
-    }).catch(() => {});
+      topResultId: topResult?._id ?? null,
+      topResultSource: topResult?.source ?? null,
+    });
 
     res.json({ results: filtered, total: filtered.length, cached: false });
   } catch (error) {

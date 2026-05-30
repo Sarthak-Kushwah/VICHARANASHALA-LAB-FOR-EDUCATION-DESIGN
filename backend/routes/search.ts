@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { protect } from '../middleware/auth.js';
 import { adminOnly } from '../middleware/admin.js';
 import {
@@ -15,9 +16,18 @@ import {
 
 const router = Router();
 
+// Tight rate limiter for the unauthenticated suggest endpoint — prevents FAQ enumeration
+const suggestLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: 'Too many suggest requests, please try again after a minute',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // ── Public search ──────────────────────────────────────────────────────────
 router.get('/trending', getTrending);
-router.get('/suggest',  getSuggest);
+router.get('/suggest',  suggestLimiter, getSuggest);
 
 // ── Semantic search ─────────────────────────────────────────────────────────
 router.post('/', protect, semanticSearch);

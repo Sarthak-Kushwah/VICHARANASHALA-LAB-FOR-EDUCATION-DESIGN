@@ -84,16 +84,30 @@ export async function setCachedResults(
 
 /**
  * Invalidate all cached search results. Call this when FAQ data changes significantly.
+ * Uses SCAN iterator (O(1) per call) instead of KEYS (O(n) and blocking).
  */
 export async function invalidateCache(): Promise<void> {
   const client = getRedis();
   if (!client) return;
 
   try {
-    const keys = await client.keys('result:*');
-    if (keys.length > 0) {
-      await client.del(...keys);
-      console.log(`[cache] invalidated ${keys.length} entries`);
+    let cursor = 0;
+    let totalDeleted = 0;
+    do {
+      // SCAN returns [nextCursor, keys[]] in the Upstash Redis SDK
+      const [nextCursor, keys] = await client.scan<Record<string, unknown>>(cursor, {
+        match: 'result:*',
+        count: 100,
+      });
+      cursor = Number(nextCursor);
+      if (keys.length > 0) {
+        await client.del(...keys);
+        totalDeleted += keys.length;
+      }
+    } while (cursor !== 0);
+
+    if (totalDeleted > 0) {
+      console.log(`[cache] invalidated ${totalDeleted} entries`);
     }
   } catch (err) {
     console.warn('[cache] invalidate failed:', (err as Error).message);

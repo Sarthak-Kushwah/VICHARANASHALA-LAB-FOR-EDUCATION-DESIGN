@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { Request, Response } from 'express';
 import User, { IUser, UserRole } from '../models/User.js';
+import { registerSchema, loginSchema, changePasswordSchema } from '../utils/validation.js';
 
 // Helper: Generates a signed JWT using the user's ID
 const generateToken = (id: string): string => {
@@ -20,32 +21,22 @@ interface UserResponse {
 // POST /api/auth/register
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, email, password } = req.body as { name?: string; email?: string; password?: string };
-
-    // 1. Validate that all required fields are provided
-    if (!name || !email || !password) {
-      res.status(400).json({ message: 'Name, email, and password are required.' });
+    const parsed = registerSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ message: 'Validation failed', errors: parsed.error.issues });
       return;
     }
+    const { name, email, password } = parsed.data;
 
-    // 2. Check if a user with this email already exists to prevent duplicates
     const userExists = await User.findOne({ email });
     if (userExists) {
       res.status(400).json({ message: 'User with this email already exists.' });
       return;
     }
 
-    // 3. Create the new user in the database (password hashing should be handled in the User model)
-    const user = await User.create({
-      name,
-      email,
-      password,
-    });
-
-    // 4. Generate an auth token for immediate login after registration
+    const user = await User.create({ name, email, password });
     const token = generateToken(user._id.toString());
 
-    // 5. Send back the token and sanitized user data (excluding password)
     const userResponse: UserResponse = {
       id: user._id.toString(),
       name: user.name,
@@ -62,32 +53,27 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 // POST /api/auth/login
 export const login = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email, password } = req.body as { email?: string; password?: string };
-
-    // 1. Validate input fields
-    if (!email || !password) {
-      res.status(400).json({ message: 'Email and password are required.' });
+    const parsed = loginSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ message: 'Validation failed', errors: parsed.error.issues });
       return;
     }
+    const { email, password } = parsed.data;
 
-    // 2. Find the user by email. Note: explicitly selecting '+password' if it's hidden by default in the model
     const user = await User.findOne({ email }).select('+password') as IUser | null;
     if (!user) {
-      res.status(401).json({ message: 'Invalid email or password.' }); // Keep error generic for security
+      res.status(401).json({ message: 'Invalid email or password.' });
       return;
     }
 
-    // 3. Compare the provided password with the hashed password in the DB
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
       res.status(401).json({ message: 'Invalid email or password.' });
       return;
     }
 
-    // 4. Passwords match; generate a new auth token
     const token = generateToken(user._id.toString());
 
-    // 5. Send back the token and sanitized user data
     const userResponse: UserResponse = {
       id: user._id.toString(),
       name: user.name,

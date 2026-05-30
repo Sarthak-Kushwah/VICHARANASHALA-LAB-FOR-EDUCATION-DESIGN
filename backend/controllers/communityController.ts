@@ -54,6 +54,10 @@ export const getAllPosts = async (req: Request, res: Response): Promise<void> =>
       .select('-embedding')
       .populate('author', 'name')
       .populate('comments.author', 'name')
+      .populate('comments.upvotes', 'name')
+      .populate('comments.downvotes', 'name')
+      .populate('comments.replies.upvotes', 'name')
+      .populate('comments.replies.downvotes', 'name')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
@@ -77,7 +81,11 @@ export const getPostById = async (req: Request, res: Response): Promise<void> =>
     const post = await CommunityPost.findById(req.params.id)
       .select('-embedding')
       .populate('author', 'name')
-      .populate('comments.author', 'name');
+      .populate('comments.author', 'name')
+      .populate('comments.upvotes', 'name')
+      .populate('comments.downvotes', 'name')
+      .populate('comments.replies.upvotes', 'name')
+      .populate('comments.replies.downvotes', 'name');
 
     if (!post) {
       res.status(404).json({ message: 'Post not found.' });

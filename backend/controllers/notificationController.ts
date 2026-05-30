@@ -7,7 +7,8 @@ export interface CreateNotificationParams {
   type: 'post_resolved' | 'comment_replied' | 'faq_match_found' | 'mention' | 'expert_request';
   title: string;
   message: string;
-  link?: string;
+  /** Must point to a navigable URL, e.g. /community?post=<id> — no bare '#' */
+  link: string;
 }
 
 // Internal helper — creates a notification. Does NOT send a response.
@@ -19,7 +20,7 @@ export const createNotification = async (params: CreateNotificationParams): Prom
       type: params.type,
       title: params.title,
       message: params.message,
-      link: params.link ?? '#',
+      link: params.link,
     });
   } catch {
     // Non-critical — swallow errors so notification failures don't break the parent operation

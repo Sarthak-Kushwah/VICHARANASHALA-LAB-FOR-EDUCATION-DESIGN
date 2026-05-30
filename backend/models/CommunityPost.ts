@@ -1,6 +1,44 @@
 import mongoose, { Document, Schema as MongooseSchema, Types } from 'mongoose';
 
-// Sub-schema for individual comments to be embedded within posts
+// ─── Reply sub-schema (nested inside comments) ──────────────────────────────────
+const replySchema = new MongooseSchema(
+  {
+    author: {
+      type: MongooseSchema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    body: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 1000,
+    },
+    upvotes: {
+      type: [MongooseSchema.Types.ObjectId],
+      ref: 'User',
+      default: [],
+    },
+    downvotes: {
+      type: [MongooseSchema.Types.ObjectId],
+      ref: 'User',
+      default: [],
+    },
+    verified: {
+      type: Boolean,
+      default: false,
+    },
+    isExpertAnswer: {
+      type: Boolean,
+      default: false,
+    },
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now },
+  },
+  { _id: true, timestamps: true }
+);
+
+// ─── Comment sub-schema ─────────────────────────────────────────────────────────
 const commentSchema = new MongooseSchema(
   {
     author: {
@@ -41,17 +79,17 @@ const commentSchema = new MongooseSchema(
       default: 0,
     },
     replies: {
-      type: mongoose.Schema.Types.Mixed,
-      default: undefined,
+      type: [replySchema],
+      default: [],
     },
   },
   { timestamps: true }
 );
 
-// Community post status enum
+// ─── Enums ─────────────────────────────────────────────────────────────────────
 export type CommunityPostStatus = 'answered' | 'unanswered';
 
-// Interface for a comment embedded in a post
+// Interface for embedded comment subdocuments (used by buildCommentTree)
 export interface IComment {
   _id: Types.ObjectId;
   author: Types.ObjectId;
@@ -67,7 +105,7 @@ export interface IComment {
   updatedAt: Date;
 }
 
-// Interface for the CommunityPost document
+// ─── Document interface ─────────────────────────────────────────────────────────
 export interface ICommunityPost extends Document {
   title: string;
   body: string;
@@ -76,12 +114,12 @@ export interface ICommunityPost extends Document {
   answer: string | null;
   answerIsExpert?: boolean;
   upvotes: Types.ObjectId[];
-  comments: IComment[];
+  comments: Types.Subdocument[];
   reports: Array<{ reportedBy: Types.ObjectId; reason: string; createdAt?: Date }>;
   embedding?: number[];
 }
 
-// Main schema for a community question/post
+// ─── Schema ─────────────────────────────────────────────────────────────────────
 const communityPostSchema = new MongooseSchema(
   {
     title: {
@@ -132,14 +170,16 @@ const communityPostSchema = new MongooseSchema(
     embedding: {
       type: [Number],
       default: undefined,
-      select: false,
     },
   },
   { timestamps: true }
 );
 
-// Creates a compound text index to enable traditional keyword-based MongoDB $text searches
+// Text index for keyword search
 communityPostSchema.index({ title: 'text', body: 'text' });
 
-// Export the model, explicitly defining the target collection name ('yaksha_faq_communityposts')
-export default mongoose.model<ICommunityPost>('CommunityPost', communityPostSchema, 'yaksha_faq_communityposts');
+export default mongoose.model<ICommunityPost>(
+  'CommunityPost',
+  communityPostSchema,
+  'yaksha_faq_communityposts'
+);

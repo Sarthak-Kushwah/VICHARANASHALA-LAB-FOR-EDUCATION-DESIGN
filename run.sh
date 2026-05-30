@@ -116,6 +116,25 @@ setup_env() {
     } > "$local_file"
   fi
 
+  # ── Fast path: skip prompts if ALL required vars are already in .env or .env.local ──
+  local required_vars="MONGODB_URI JWT_SECRET"
+  local all_set=true
+  for var in $required_vars; do
+    local val_in_env=$(grep "^${var}=" "$BACKEND/.env" 2>/dev/null | cut -d'=' -f2- | sed "s/^['\"]//g;s/['\"]$//g")
+    local val_in_local=$(grep "^${var}=" "$BACKEND/.env.local" 2>/dev/null | cut -d'=' -f2- | sed "s/^['\"]//g;s/['\"]$//g")
+    if [ -z "$val_in_env" ] && [ -z "$val_in_local" ]; then
+      all_set=false
+      break
+    fi
+  done
+
+  if [ "$all_set" = true ]; then
+    echo ""
+    ok "All required env vars found in .env / .env.local — skipping prompts."
+    echo ""
+    return 0
+  fi
+
   echo ""
   echo "=============================================="
   echo "  Yaksha FAQ Portal — Env Setup"
