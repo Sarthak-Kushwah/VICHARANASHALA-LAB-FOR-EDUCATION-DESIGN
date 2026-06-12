@@ -38,22 +38,51 @@ interface LogInput {
 }
 
 const LOG_LEVELS: Record<LogLevel, string> = {
-  info:  'INFO ',
-  warn:  'WARN ',
-  error: 'ERROR',
-  alert: 'ALERT',
+  info:  'INFO',  // 4 chars
+  warn:  'WARN',  // 4 chars
+  error: 'ERR ',  // 4 chars (trailing space for alignment)
+  alert: 'ALRT', // 4 chars (abbreviated so the [TAG] is 4 wide)
 };
 
 const C = {
-  red:    (s: string) => `\x1b[31m${s}\x1b[0m`,
-  green:  (s: string) => `\x1b[32m${s}\x1b[0m`,
-  yellow: (s: string) => `\x1b[33m${s}\x1b[0m`,
-  blue:   (s: string) => `\x1b[34m${s}\x1b[0m`,
-  magenta:(s: string) => `\x1b[35m${s}\x1b[0m`,
-  cyan:   (s: string) => `\x1b[36m${s}\x1b[0m`,
-  bold:   (s: string) => `\x1b[1m${s}\x1b[0m`,
-  dim:    (s: string) => `\x1b[2m${s}\x1b[0m`,
-  boldRed:(s: string) => `\x1b[1m\x1b[31m${s}\x1b[0m`,
+  reset:   (s: string) => `\x1b[0m${s}\x1b[0m`,
+  red:     (s: string) => `\x1b[31m${s}\x1b[0m`,
+  green:   (s: string) => `\x1b[32m${s}\x1b[0m`,
+  yellow:  (s: string) => `\x1b[33m${s}\x1b[0m`,
+  blue:    (s: string) => `\x1b[34m${s}\x1b[0m`,
+  magenta: (s: string) => `\x1b[35m${s}\x1b[0m`,
+  cyan:    (s: string) => `\x1b[36m${s}\x1b[0m`,
+  white:   (s: string) => `\x1b[37m${s}\x1b[0m`,
+  bold:    (s: string) => `\x1b[1m${s}\x1b[0m`,
+  dim:     (s: string) => `\x1b[2m${s}\x1b[0m`,
+  // Background-colored tags — the level stays on a single line,
+  // the tag stands out from the rest of the line.
+  bgBlue:   (s: string) => `\x1b[44;97m${s}\x1b[0m`,   // INFO  — blue bg, white text
+  bgYellow: (s: string) => `\x1b[43;30m${s}\x1b[0m`,   // WARN  — yellow bg, black text
+  bgRed:    (s: string) => `\x1b[41;97m${s}\x1b[0m`,   // ERROR — red bg, white text
+  // ALERT uses inverse + bold (red text on white bg) — the
+  // most attention-grabbing tag in the system.
+  bgAlert:  (s: string) => `\x1b[1;37;41m${s}\x1b[0m`,  // ALERT — bold white on red bg
+  boldRed:  (s: string) => `\x1b[1;31m${s}\x1b[0m`,
+};
+
+/**
+ * Leading symbol per level. One char so the line stays
+ * one-line. Pairs with the level tag for redundancy — the
+ * symbol gives at-a-glance severity without parsing the tag.
+ */
+const LEVEL_GLYPHS: Record<LogLevel, string> = {
+  info:  '▶',
+  warn:  '!',
+  error: '✗',
+  alert: '‼',
+};
+
+const LEVEL_GLYPH_COLORS: Record<LogLevel, (s: string) => string> = {
+  info:  C.cyan,
+  warn:  C.yellow,
+  error: C.red,
+  alert: C.boldRed,
 };
 
 // v1.68 — L1 sweep: subsystem-specific loggers for the
@@ -79,24 +108,26 @@ function coloredCategory(category: string): string {
 }
 
 function coloredLevel(level: LogLevel): string {
-  const label = LOG_LEVELS[level];
-  if (level === 'alert') return C.boldRed(`[${label}]`);
-  if (level === 'error') return C.red(`[${label}]`);
-  if (level === 'warn')  return C.yellow(`[${label}]`);
-  return C.blue(`[${label}]`);  // info
+  const label = `[${LOG_LEVELS[level]}]`;  // 6 chars wide incl brackets
+  if (level === 'alert') return C.bgAlert(label);
+  if (level === 'error') return C.bgRed(label);
+  if (level === 'warn')  return C.bgYellow(label);
+  return C.bgBlue(label);  // info
 }
 
 function formatLog(entry: LogInput): string {
   const timestamp = new Date().toISOString().slice(11, 23);
   const lvl = coloredLevel(entry.level);
+  const glyph = LEVEL_GLYPH_COLORS[entry.level](LEVEL_GLYPHS[entry.level]);
   const cat = coloredCategory(entry.category);
   const metaKeys = Object.keys(entry.meta || {});
-  const metaStr = metaKeys.length > 0 ? ` ${JSON.stringify(entry.meta)}` : '';
-  const prefix = entry.level === 'alert' ? C.boldRed('━'.repeat(60)) + '\n' : '';
-  const suffix = entry.level === 'alert' ? '\n' + C.boldRed('━'.repeat(60)) : '';
-  return `${prefix}${C.dim(`[${timestamp}]`)} ${lvl} ${cat} ${C.bold(entry.message)}${metaStr}${suffix}`;
+  const metaStr = metaKeys.length > 0 ? ` ${C.dim(JSON.stringify(entry.meta))}` : '';
+  // For ALERT, add separators above + below so it stands out
+  // in scrollback. Otherwise the line is one-line + compact.
+  const prefix = entry.level === 'alert' ? C.boldRed('━'.repeat(80)) + '\n' + C.boldRed('  ') : '';
+  const suffix = entry.level === 'alert' ? '\n' + C.boldRed('━'.repeat(80)) : '';
+  return `${prefix}${C.dim(timestamp)} ${glyph} ${lvl} ${cat} ${C.bold(entry.message)}${metaStr}${suffix}`;
 }
-
 function emit(entry: LogInput): void {
   const formatted = formatLog(entry);
   if (entry.level === 'error' || entry.level === 'alert') {

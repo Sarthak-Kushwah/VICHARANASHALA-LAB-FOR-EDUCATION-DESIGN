@@ -2,7 +2,8 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
-import morgan from 'morgan';
+// morgan removed in v1.68 — httpLog (via requestLogger.ts)
+// now owns HTTP request logging.
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import connectDB from './config/db.js';
@@ -136,7 +137,11 @@ app.use(cors({
 app.use(helmet({
   crossOriginResourcePolicy: false, // Adjusted to allow secure cross-origin API requests
 }));
-app.use(morgan('dev')); // Logs incoming HTTP requests to the console
+// v1.68 — requestLogger.ts (the named httpLog) replaced
+// morgan here. morgan was producing unstyled "GET /api/foo
+// 200 12ms" lines that duplicated what httpLog already logs
+// with [http] category + colored level tag. Removing it cuts
+// noise without losing any signal.
 
 // 4. Body Parsing
 app.use(express.json()); // Parses incoming JSON payloads in the request body
