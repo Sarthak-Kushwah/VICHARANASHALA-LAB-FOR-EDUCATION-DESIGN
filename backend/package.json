@@ -20,7 +20,8 @@
     "add:post": "tsx scripts/addPost.ts",
     "backfill:community": "tsx scripts/backfillCommunityEmbeddings.ts",
     "backfill:public-metrics": "tsx scripts/backfillPublicMetrics.ts",
-    "audit:data": "tsx scripts/auditData.ts"
+    "audit:data": "tsx scripts/auditData.ts",
+    "cleanup:orphan-notifications": "tsx scripts/cleanupOrphanNotifications.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",

@@ -40,6 +40,21 @@ function flag(collection: string, kind: string, detail: string) {
   issues.push({ collection, kind, detail });
 }
 
+/** Normalize an _id-ish value to a string. */
+function idToString(v: unknown): string | null {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'string') return v;
+  if (typeof v === 'object' && v !== null && 'toString' in v) {
+    return (v as { toString(): string }).toString();
+  }
+  return null;
+}
+
+async function getUserIdSet(db: mongoose.mongo.Db): Promise<Set<string>> {
+  const userIds = await db.collection('yaksha_faq_users').distinct('_id');
+  return new Set(userIds.map((id) => idToString(id)).filter((s): s is string => s !== null));
+}
+
 async function auditUsers(db: mongoose.mongo.Db) {
   console.log('\n=== Users ===');
   const total = await db.collection('yaksha_faq_users').countDocuments();
@@ -58,7 +73,7 @@ async function auditUsers(db: mongoose.mongo.Db) {
     if (u.tier !== calculateTier(u.points || 0)) {
       tierMismatch++;
       if (tierMismatch <= 5) {
-        console.log(`  tier-mismatch: ${u._id.toString()} (${u.name}) points=${u.points} tier=${u.tier} expected=${calculateTier(u.points || 0)}`);
+        console.log(`  tier-mismatch: ${idToString(u._id)} (${u.name}) points=${u.points} tier=${u.tier} expected=${calculateTier(u.points || 0)}`);
       }
     }
   }
@@ -109,12 +124,16 @@ async function auditFAQs(db: mongoose.mongo.Db) {
     flag('FAQ', 'missing-embedding', `${missing} FAQs have empty embeddings. Run npm run backfill:embeddings.`);
   }
 
-  // Orphan createdBy
-  const userIds = await db.collection('yaksha_faq_users').distinct('_id');
-  const userIdSet = new Set(userIds.map((id: mongoose.Types.ObjectId) => id.toString()));
-  const orphanCreatedBy = await db.collection('yaksha_faq_faqs').countDocuments({
-    createdBy: { $ne: null, $nin: [...userIdSet] },
-  });
+  // Orphan createdBy (normalize to string)
+  const userIdSet = await getUserIdSet(db);
+  const allCreatedBy = await db.collection('yaksha_faq_faqs')
+    .find({ createdBy: { $ne: null } }, { projection: { createdBy: 1 } })
+    .toArray();
+  let orphanCreatedBy = 0;
+  for (const f of allCreatedBy) {
+    const str = idToString(f.createdBy);
+    if (str && !userIdSet.has(str)) orphanCreatedBy++;
+  }
   if (orphanCreatedBy > 0) {
     flag('FAQ', 'orphan-createdBy', `${orphanCreatedBy} FAQs reference a non-existent user.`);
   }
@@ -161,12 +180,16 @@ async function auditSupportRequests(db: mongoose.mongo.Db) {
   const allStatuses = await db.collection('yaksha_faq_supportrequests').distinct('status');
   console.log(`  statuses seen: ${JSON.stringify(allStatuses)}`);
 
-  // Orphan userId
-  const userIds = await db.collection('yaksha_faq_users').distinct('_id');
-  const userIdSet = new Set(userIds.map((id: mongoose.Types.ObjectId) => id.toString()));
-  const orphanUserId = await db.collection('yaksha_faq_supportrequests').countDocuments({
-    userId: { $ne: null, $nin: [...userIdSet] },
-  });
+  // Orphan userId (string or ObjectId)
+  const userIdSet = await getUserIdSet(db);
+  const allUserIds = await db.collection('yaksha_faq_supportrequests')
+    .find({ userId: { $ne: null } }, { projection: { userId: 1 } })
+    .toArray();
+  let orphanUserId = 0;
+  for (const t of allUserIds) {
+    const str = idToString(t.userId);
+    if (str && !userIdSet.has(str)) orphanUserId++;
+  }
   if (orphanUserId > 0) {
     flag('SupportRequest', 'orphan-userId', `${orphanUserId} tickets reference a non-existent user.`);
   }
@@ -187,14 +210,22 @@ async function auditNotifications(db: mongoose.mongo.Db) {
   const unread = await db.collection('yaksha_faq_notifications').countDocuments({ read: false });
   console.log(`  total=${total}  unread=${unread}`);
 
-  // Orphan recipient
-  const userIds = await db.collection('yaksha_faq_users').distinct('_id');
-  const userIdSet = new Set(userIds.map((id: mongoose.Types.ObjectId) => id.toString()));
-  const orphanRecipients = await db.collection('yaksha_faq_notifications').countDocuments({
-    recipient: { $ne: null, $nin: [...userIdSet] },
-  });
-  if (orphanRecipients > 0) {
-    flag('Notification', 'orphan-recipient', `${orphanRecipients} notifications have a non-existent recipient.`);
+  // Orphan recipient. The recipient field in older rows is
+  // stored as a STRING (not an ObjectId) — the controllers
+  // were updated at some point but the historical data
+  // still has strings. We normalize both sides to strings
+  // before comparing.
+  const userIdSet = await getUserIdSet(db);
+  const allRecipients = await db.collection('yaksha_faq_notifications')
+    .find({}, { projection: { recipient: 1 } })
+    .toArray();
+  let orphanCount = 0;
+  for (const n of allRecipients) {
+    const str = idToString(n.recipient);
+    if (str && !userIdSet.has(str)) orphanCount++;
+  }
+  if (orphanCount > 0) {
+    flag('Notification', 'orphan-recipient', `${orphanCount} notifications have a non-existent recipient. Run npm run cleanup:orphan-notifications.`);
   }
 }
 
@@ -208,7 +239,7 @@ async function auditSearchLogs(db: mongoose.mongo.Db) {
   console.log(`  total=${total}  last7d=${last7d}  deadEnds=${deadEnds}`);
 
   // 0-result rate (the user said "we need proper accuracy")
-  if (last7d > 0) {
+  if (total > 0) {
     const rate = (deadEnds / total * 100).toFixed(1);
     console.log(`  dead-end rate: ${rate}%`);
     if (deadEnds / total > 0.4) {
