@@ -18,6 +18,9 @@ importers:
       '@types/node':
         specifier: ^25.9.1
         version: 25.9.4
+      '@types/range-parser':
+        specifier: ^1.2.7
+        version: 1.2.7
       mongodb-memory-server:
         specifier: ^9.2.0
         version: 9.5.0
