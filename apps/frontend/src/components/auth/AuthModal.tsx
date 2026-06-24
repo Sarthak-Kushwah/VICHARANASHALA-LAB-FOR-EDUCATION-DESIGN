@@ -2,6 +2,7 @@ import React, { useEffect, useState, type ChangeEvent, type FormEvent } from 're
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth, type User } from '../../hooks/useAuth';
 import { useAuthModal } from '../../context/AuthModalContext';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import api from '../../utils/api';
 import Input from '../ui/Input';
 import Button from '../ui/Button';
@@ -113,13 +114,7 @@ export default function AuthModal() {
   }, [isOpen, closing, closeModal]);
 
   // Lock body scroll while the modal is open (or animating out).
-  useEffect(() => {
-    if (isOpen || closing) {
-      const prev = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-      return () => { document.body.style.overflow = prev; };
-    }
-  }, [isOpen, closing]);
+  useBodyScrollLock(isOpen || closing);
 
   // After the fade-out animation (500ms), truly unmount.
   // The provider's closeModal sets isOpen=false, which triggers this.

@@ -5,6 +5,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { usePublicFaqById } from './usePublicFaqApi';
 import { useExploreSession, useReadingTracker, useViewTracker } from './useReadingTracker';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { formatFullDate, formatReadTime, trustBadge } from './format';
 import { highlightMatch } from './highlightMatch';
 import type { PublicFaq } from './types';
@@ -47,13 +48,7 @@ export function PublicFaqDetail({
   }, [onClose]);
 
   // Lock body scroll while modal is open
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, []);
+  useBodyScrollLock(true);
 
   // Detect "end-of-article" for the reading-completion indicator
   useEffect(() => {

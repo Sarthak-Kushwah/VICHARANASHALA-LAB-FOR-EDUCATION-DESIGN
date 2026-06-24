@@ -102,14 +102,14 @@ export default function Navbar({ showProgramSwitcher: _showProgramSwitcher = fal
   // tabs Support/Golden) is already at capacity at lg. At xl there's
   // enough room; below that Golden is reachable via /golden and
   // any admin nudge in the inbox.
-  const goldenExtras: NavItem[] = goldenOn
+  const goldenExtras: NavItem[] = (goldenOn && isAuthenticated)
     ? [{ label: 'Golden', to: '/golden', xlOnly: true as const }]
     : [];
-  let allNavItems: NavItem[] = supportOn
+  let allNavItems: NavItem[] = (supportOn && isAuthenticated)
     ? [...navItems, { label: 'Support', to: '/support' }, ...goldenExtras]
     : navItems;
 
-  if (user?.role === 'admin') {
+  if (!isAuthenticated || user?.role === 'admin') {
     allNavItems = allNavItems.filter(item => item.label !== 'Welcome Package');
   }
 

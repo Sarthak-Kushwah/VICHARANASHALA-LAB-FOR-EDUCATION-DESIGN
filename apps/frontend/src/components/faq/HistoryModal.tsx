@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import api, { friendlyError } from '../../utils/api';
 
 interface HistoryModalProps {
@@ -19,6 +20,8 @@ interface HistoryEntry {
 export default function HistoryModal({ faqId, faqQuestion, onClose }: HistoryModalProps) {
   const [logs, setLogs] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
+
+  useBodyScrollLock(true);
 
   useEffect(() => {
     let isMounted = true;

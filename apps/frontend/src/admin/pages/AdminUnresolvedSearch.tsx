@@ -4,15 +4,7 @@ import adminApi from '../utils/adminApi';
 import Badge from '../components/common/Badge';
 import Modal from '../components/common/Modal';
 import { TableSkeleton } from '../components/common/SkeletonLoader';
-
-function useDebounce<T>(value: T, delay: number): T {
-  const [v, setV] = useState(value);
-  useEffect(() => {
-    const t = setTimeout(() => setV(value), delay);
-    return () => clearTimeout(t);
-  }, [value, delay]);
-  return v;
-}
+import { useDebounce } from '../../hooks/useDebounce';
 
 interface UnresolvedItem {
   _id: string;

@@ -72,6 +72,13 @@ export const getAiConfig = async (req: Request, res: Response): Promise<void> =>
           searchSummarization: { enabled: true, model: 'claude-sonnet-4-20250514', temperature: 0.3, maxTokens: 512 },
           faqGeneration:       { enabled: true, model: 'claude-sonnet-4-20250514', temperature: 0.4, maxTokens: 1024 },
         },
+        embedding: {
+          provider: 'local',
+          model: 'mixedbread-ai/mxbai-embed-large-v1',
+          dimensions: 1024,
+          apiKeyCipher: '',
+          baseURL: '',
+        },
         usage: { totalRequests: 0, totalEstimatedCost: 0, lastResetAt: new Date() },
         isActive: true,
         batchId: null,
@@ -101,10 +108,17 @@ interface ProviderOverrideUpdate {
 
 export const updateAiConfig = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { activeProvider, features, providers } = req.body as {
+    const { activeProvider, features, providers, embedding } = req.body as {
       activeProvider?: AIProviderType;
       features?: IAiConfig['features'];
       providers?: Partial<Record<AIProviderType, ProviderOverrideUpdate>>;
+      embedding?: {
+        provider?: 'local' | 'huggingface' | 'openai' | 'custom';
+        model?: string;
+        dimensions?: number;
+        apiKey?: string;
+        baseURL?: string;
+      };
     };
 
     // v1.69 — Phase 4: per-program override on writes. When
@@ -140,6 +154,13 @@ export const updateAiConfig = async (req: Request, res: Response): Promise<void>
           knowledgeExtraction: { enabled: true, model: 'claude-sonnet-4-20250514', temperature: 0.2, maxTokens: 2048 },
           searchSummarization: { enabled: true, model: 'claude-sonnet-4-20250514', temperature: 0.3, maxTokens: 512 },
           faqGeneration:       { enabled: true, model: 'claude-sonnet-4-20250514', temperature: 0.4, maxTokens: 1024 },
+        },
+        embedding: {
+          provider: 'local',
+          model: 'mixedbread-ai/mxbai-embed-large-v1',
+          dimensions: 1024,
+          apiKeyCipher: '',
+          baseURL: '',
         },
         usage: { totalRequests: 0, totalEstimatedCost: 0, lastResetAt: new Date() },
         isActive: true,
@@ -202,6 +223,19 @@ export const updateAiConfig = async (req: Request, res: Response): Promise<void>
     for (const [k, v] of Object.entries(features ?? {})) {
       setOps[`features.${k}`] = v;
     }
+
+    // Process embedding updates
+    if (embedding && typeof embedding === 'object') {
+      if (embedding.provider !== undefined) setOps['embedding.provider'] = embedding.provider;
+      if (embedding.model !== undefined) setOps['embedding.model'] = embedding.model;
+      if (embedding.dimensions !== undefined) setOps['embedding.dimensions'] = embedding.dimensions;
+      if (embedding.baseURL !== undefined) setOps['embedding.baseURL'] = embedding.baseURL;
+      if (embedding.apiKey !== undefined) {
+        config.setEmbeddingApiKey(embedding.apiKey);
+        setOps['embedding.apiKeyCipher'] = config.embedding.apiKeyCipher;
+      }
+    }
+
     if (Object.keys(setOps).length > 0) {
       await AiConfig.findOneAndUpdate(
         { _id: config._id },
@@ -215,7 +249,7 @@ export const updateAiConfig = async (req: Request, res: Response): Promise<void>
       'update_ai_config',
       config._id.toString(),
       'ai_config',
-      JSON.stringify({ activeProvider, providersChanged: providers ? Object.keys(providers) : [], featuresChanged: features ? Object.keys(features) : [] })
+      JSON.stringify({ activeProvider, providersChanged: providers ? Object.keys(providers) : [], featuresChanged: features ? Object.keys(features) : [], embeddingChanged: !!embedding })
     );
 
     res.json({ message: 'AI config updated.', config: config.publicView() });
@@ -283,14 +317,22 @@ export const getAiProviders = async (_req: Request, res: Response): Promise<void
 
 export const testProvider = async (req: Request, res: Response): Promise<void> => {
   const { provider } = req.query as { provider?: string };
-  const validProviders: AIProviderType[] = ['anthropic', 'openai', 'xai', 'minimax', 'gemini', 'custom'];
+  const validProviders = ['anthropic', 'openai', 'xai', 'minimax', 'gemini', 'custom', 'embedding'];
 
-  if (!provider || !validProviders.includes(provider as AIProviderType)) {
+  if (!provider || !validProviders.includes(provider)) {
     res.status(400).json({ ok: false, message: 'Invalid provider' });
     return;
   }
 
   try {
+    if (provider === 'embedding') {
+      const { generateEmbedding } = await import('../../utils/ai/embeddings.js');
+      // Generate a test embedding using the active configuration
+      await generateEmbedding('test connection connection check');
+      res.json({ ok: true, message: 'Embedding generation successful' });
+      return;
+    }
+
     const { chatWithProvider } = await import('../../utils/ai/aiProvider.js');
     await chatWithProvider(provider as AIProviderType, [{ role: 'user', content: 'ping' }]);
     res.json({ ok: true, message: 'Connection successful' });
@@ -303,15 +345,20 @@ export const testProvider = async (req: Request, res: Response): Promise<void> =
 
 export const revealApiKey = async (req: Request, res: Response): Promise<void> => {
   const { provider } = req.params;
-  const validProviders: AIProviderType[] = ['anthropic', 'openai', 'xai', 'minimax', 'gemini', 'custom'];
+  const validProviders = ['anthropic', 'openai', 'xai', 'minimax', 'gemini', 'custom', 'embedding'];
 
-  if (!validProviders.includes(provider as AIProviderType)) {
+  if (typeof provider !== 'string' || !validProviders.includes(provider)) {
     res.status(400).json({ message: 'Invalid provider' });
     return;
   }
 
   const config = await AiConfig.findOne({ isActive: true });
-  const key = config?.getApiKey(provider as AIProviderType) ?? null;
+  let key: string | null = null;
+  if (provider === 'embedding') {
+    key = config?.getEmbeddingApiKey() ?? null;
+  } else {
+    key = config?.getApiKey(provider as AIProviderType) ?? null;
+  }
 
   await logAction(
     (req as any).user?.id ?? 'system',

@@ -1,41 +1,19 @@
 /**
  * embeddings.ts — semantic embedding pipeline.
  *
- * v1.68 — Model swap: Xenova/multi-qa-mpnet-base-dot-v1
- * (768-dim, 110M params) → mixedbread-ai/mxbai-embed-large-v1
- * (1024-dim, 335M params). MTEB score 64.68 vs the old model's
- * lower MTEB; should fix the "FAQ search returns nothing useful"
- * complaint.
- *
- * v1.68 (HF API mode) — When HUGGINGFACE_API_KEY is set, route
- * all embedding calls through the HF Inference API at
- * https://router.huggingface.co/hf-inference/models/<model>.
- * No 1.2GB ONNX download, no in-process model load, just a
- * network call. When unset, fall back to running the model
- * in-process via @huggingface/transformers (the maintained
- * successor to @xenova/transformers).
- *
- * Important: mxbai wants a retrieval-specific prompt for QUERIES
- * ("Represent this sentence for searching relevant passages: ").
- * Documents (FAQs, posts) embed as-is, no prompt. Use
- * generateQueryEmbedding() for queries and generateEmbedding()
- * for documents.
- *
- * IMPORTANT: if you swap models again, you MUST:
- *   1. Update MODEL_SLUG below
- *   2. Update EMBEDDING_DIM below
- *   3. Run `npm run backfill:embeddings` to regenerate all stored
- *      vectors (old + new dims don't compose in the same Atlas
- *      index)
- *   4. Update the `numDimensions` value in the Atlas vector
- *      search index (recreate the index — Atlas doesn't allow
- *      in-place dim change)
+ * Replaced static configurations with dynamic lookups from the database.
+ * Supports OpenAI, Custom, HuggingFace Inference API, and Local in-process pipeline.
+ * 
+ * Supports per-program overrides when batchId is supplied.
  */
+
 import {
   pipeline,
   FeatureExtractionPipeline,
   env as transformersEnv,
 } from '@huggingface/transformers';
+import mongoose, { Types } from 'mongoose';
+import AiConfig from '../../modules/ai/ai-config.model.js';
 import { logger } from '../http/logger.js';
 
 export const MODEL_SLUG = 'mixedbread-ai/mxbai-embed-large-v1';
@@ -43,75 +21,80 @@ export const EMBEDDING_DIM = 1024;
 /** Retrieval prompt prepended to search queries. Don't add to documents. */
 export const QUERY_PROMPT = 'Represent this sentence for searching relevant passages: ';
 
-// ── HF Inference API path ────────────────────────────────────────────
-// v1.68.1 — Switched from the legacy `api-inference.huggingface.co`
-// subdomain to the new `router.huggingface.co/hf-inference/`
-// path. The legacy subdomain has been unresolvable on some
-// corporate / VPN DNS setups (ENOTFOUND), which silently
-// broke every embedding call. The new path resolves
-// everywhere we tested.
-//
-// Both endpoints return the same model, same 1024-dim
-// vector, and the new endpoint's un-normalized output is
-// passed through our existing `normalizeL2()` step
-// downstream (see callHfApiEmbedding) so the Atlas
-// dotProduct index still sees L2-normalized vectors.
 const HF_API_BASE = 'https://router.huggingface.co/hf-inference/models';
+const HF_MAX_RETRIES = 2;
+const HF_TIMEOUT_MS = 30_000;
+const HF_RETRY_DELAY_MS = 500;
 
-function getHfApiKey(): string | null {
-  return (process.env.HUGGINGFACE_API_KEY ?? '').trim() || null;
-}
+/**
+ * Dynamically resolve embedding settings from the active database configuration.
+ * Automatically handles fallbacks and default global credentials.
+ */
+export async function getActiveEmbeddingConfig(batchId: string | null = null) {
+  let config: any = null;
+  try {
+    if (mongoose.connection.readyState === 1) {
+      if (batchId && Types.ObjectId.isValid(batchId)) {
+        config = await AiConfig.findOne({ batchId, isActive: true });
+      }
+      if (!config) {
+        config = await AiConfig.findOne({ batchId: null, isActive: true });
+      }
+    }
+  } catch (err) {
+    logger.warn(`[embeddings] Failed to resolve active AiConfig for embeddings: ${(err as Error).message}`);
+  }
 
-function shouldUseHfApi(): boolean {
-  return getHfApiKey() !== null;
+  let provider: 'local' | 'huggingface' | 'openai' | 'custom' = 'local';
+  let model = MODEL_SLUG;
+  let dimensions = EMBEDDING_DIM;
+  let baseURL = '';
+  let apiKey = '';
+
+  if (config && config.embedding) {
+    provider = config.embedding.provider || 'local';
+    model = config.embedding.model || MODEL_SLUG;
+    dimensions = config.embedding.dimensions || EMBEDDING_DIM;
+    baseURL = config.embedding.baseURL || '';
+    apiKey = config.getEmbeddingApiKey() || '';
+  } else {
+    // Legacy environment variable fallback
+    const hfKey = (process.env.HUGGINGFACE_API_KEY ?? '').trim();
+    if (hfKey) {
+      provider = 'huggingface';
+      apiKey = hfKey;
+    }
+  }
+
+  // DO NOT fallback to global credentials (e.g. chat provider keys or baseURLs).
+  // Everything must be configured strictly separately.
+  if (!apiKey) {
+    if (provider === 'openai' || provider === 'custom') {
+      apiKey = (process.env.EMBEDDING_API_KEY ?? '').trim();
+    } else if (provider === 'huggingface') {
+      apiKey = (process.env.EMBEDDING_API_KEY ?? process.env.HUGGINGFACE_API_KEY ?? '').trim();
+    }
+  }
+
+  if (!baseURL) {
+    if (provider === 'openai') {
+      baseURL = (process.env.EMBEDDING_BASE_URL ?? 'https://api.openai.com/v1').trim();
+    } else if (provider === 'custom') {
+      baseURL = (process.env.EMBEDDING_BASE_URL ?? 'http://localhost:11434/v1').trim();
+    }
+  }
+
+  return { provider, model, dimensions, baseURL, apiKey };
 }
 
 /**
- * Call the HF Inference API for a single text. Returns the
- * embedding vector. The API may return either:
- *   - pooled 2D:  [[float, float, ...]]   (most common for
- *                                          sentence-transformers)
- *   - hidden 3D: [[[float, ...], [float, ...], ...]]   (raw
- *                                          last_hidden_state;
- *                                          needs CLS pooling)
- *
- * We detect the shape and either normalize the pooled result
- * or do CLS pooling + normalize the hidden states.
- *
- * v1.70 — Retry wrapper for transient failures.
- *
- * The HF Inference API occasionally aborts mid-request during
- * concurrent-burst conditions (cron startup fires categoryCluster +
- * faqAudit + autoAnswer + popularity simultaneously, easily
- * exceeding the free-tier per-minute rate limit). Node's undici
- * surfaces those as AbortError (err.code === 20, err.name ===
- * 'AbortError', message === 'This operation was aborted'). The
- * 30s timeout here is the upper bound, NOT the abort cause —
- * warm HF calls complete in ~0.3s.
- *
- * We retry once on transient failures with 500ms backoff:
- *   - AbortError (network/keep-alive/rate-limit-disconnect)
- *   - HTTP 429 (rate-limited — worth backing off and retrying)
- *   - HTTP 5xx (transient server error)
- * We do NOT retry:
- *   - HTTP 4xx other than 429 (real bug — surface it)
- *   - JSON parse errors (model returned garbage — surface it)
- *
- * The retry budget is intentionally small: 1 extra attempt. If HF
- * is genuinely down, callers fall through to their existing
- * graceful-degradation paths (empty results, keyword fallback).
- * Bumping retries higher would just add latency to the failure path.
+ * Call the HF Inference API for a single text.
  */
-const HF_MAX_RETRIES = 2;          // first attempt + 1 retry
-const HF_TIMEOUT_MS  = 30_000;     // per-attempt ceiling
-const HF_RETRY_DELAY_MS = 500;     // backoff between attempts
-
-async function callHfApiEmbedding(text: string): Promise<number[]> {
-  const apiKey = getHfApiKey();
+async function callHfApiEmbedding(text: string, apiKey: string, model: string): Promise<number[]> {
   if (!apiKey) {
-    throw new Error('HUGGINGFACE_API_KEY is not set');
+    throw new Error('HUGGINGFACE_API_KEY (or embedding specific key) is not set');
   }
-  const url = `${HF_API_BASE}/${MODEL_SLUG}`;
+  const url = `${HF_API_BASE}/${model}`;
   let lastError: Error | null = null;
 
   for (let attempt = 1; attempt <= HF_MAX_RETRIES; attempt++) {
@@ -135,7 +118,6 @@ async function callHfApiEmbedding(text: string): Promise<number[]> {
       if (!res.ok) {
         const errText = await res.text().catch(() => '<body unreadable>');
         const err = new Error(`HF Inference API ${res.status}: ${errText}`);
-        // 429 (rate-limited) and 5xx are worth one retry; other 4xx are real bugs.
         const retryable = res.status === 429 || res.status >= 500;
         if (retryable && attempt < HF_MAX_RETRIES) {
           lastError = err;
@@ -147,49 +129,20 @@ async function callHfApiEmbedding(text: string): Promise<number[]> {
       }
 
       const data = await res.json();
-      // v1.68.1 — the new router endpoint returns a FLAT
-      // 1D array of 1024 numbers (not a 2D nested array).
-      // Three valid response shapes from various HF
-      // endpoints/versions:
-      //
-      //   (1) 2D: [batch, dim]                  → [[0.06, 0.29, ...]]
-      //       E.g. some legacy endpoints, mxbai hidden states
-      //   (2) 1D: [dim]                         → [0.06, 0.29, ...]
-      //       E.g. the new router endpoint, fully pooled
-      //   (3) 3D: [batch, seq, dim]             → [[[0.06, ...]]]
-      //       E.g. mxbai hidden states without CLS pooling
-      //
-      // The previous code assumed shape (3) and tried to
-      // take data[0][0] as the vector — that returned a
-      // single number for the new endpoint, and normalizeL2
-      // threw "vec is not iterable" trying to for-loop over
-      // it. Now we probe the shape first.
       if (!Array.isArray(data) || data.length === 0) {
         throw new Error(`HF Inference API returned unexpected shape: ${JSON.stringify(data).slice(0, 200)}`);
       }
       const first = data[0];
       if (Array.isArray(first)) {
         if (Array.isArray(first[0])) {
-          // shape (3): 3D — take CLS token (first token of first sequence)
           return normalizeL2(first[0] as number[]);
         }
-        // shape (1): 2D already-pooled, single vector in the batch
         return normalizeL2(first as number[]);
       }
-      // shape (2): 1D — data itself is the vector
       return normalizeL2(data as number[]);
     } catch (err) {
       clearTimeout(t);
       const e = err as Error & { code?: number; name?: string };
-      // AbortError from undici: err.name === 'AbortError',
-      // err.code === 20 (DOMException code for AbortError),
-      // err.message === 'This operation was aborted'. The 30s
-      // timeout above is one possible trigger, but during cron
-      // bursts at server boot the abort typically fires much
-      // sooner — undici resets the connection when HF closes it
-      // mid-request (rate-limit, transient upstream error).
-      // We can't easily distinguish the two from inside the
-      // catch, so the retry treats them identically.
       const isAbort = e?.name === 'AbortError' || e?.code === 20;
       if (isAbort && attempt < HF_MAX_RETRIES) {
         lastError = e;
@@ -197,15 +150,63 @@ async function callHfApiEmbedding(text: string): Promise<number[]> {
         await new Promise((r) => setTimeout(r, HF_RETRY_DELAY_MS));
         continue;
       }
-      // Non-retryable error (or final attempt failed) — bubble up.
-      // Don't wrap: callers pattern-match on the error message and
-      // a wrapped AbortError would still match `name === 'AbortError'`.
       throw err;
     }
   }
-  // Should be unreachable — the loop either returns, throws, or
-  // continues. Throw the last error to satisfy TS control flow.
   throw lastError ?? new Error('HF embedding failed after retries');
+}
+
+/**
+ * Call OpenAI or OpenAI-compatible embeddings API.
+ */
+async function callOpenAiEmbedding(text: string, apiKey: string, model: string, baseURL: string, dimensions?: number): Promise<number[]> {
+  if (!apiKey) {
+    throw new Error('API Key is required for OpenAI/Custom embedding provider');
+  }
+  const base = baseURL.replace(/\/$/, '');
+  const url = `${base}/embeddings`;
+
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), HF_TIMEOUT_MS);
+
+  try {
+    const body: Record<string, unknown> = {
+      input: text,
+      model,
+    };
+    
+    // Pass dimensions parameter only if configured AND model is text-embedding-3
+    if (dimensions && (model.includes('text-embedding-3') || dimensions !== 1024)) {
+      body.dimensions = dimensions;
+    }
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    clearTimeout(t);
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '<body unreadable>');
+      throw new Error(`OpenAI-compatible Embedding API ${res.status}: ${errText}`);
+    }
+
+    const data = await res.json() as { data?: { embedding?: number[] }[] };
+    const vec = data.data?.[0]?.embedding;
+    if (!Array.isArray(vec)) {
+      throw new Error(`Embedding API returned unexpected shape: ${JSON.stringify(data).slice(0, 200)}`);
+    }
+
+    return normalizeL2(vec);
+  } catch (err) {
+    clearTimeout(t);
+    throw err;
+  }
 }
 
 function normalizeL2(vec: number[]): number[] {
@@ -217,41 +218,48 @@ function normalizeL2(vec: number[]): number[] {
 }
 
 // ── In-process local pipeline (fallback) ───────────────────────────────
-let cachedEmbedder: FeatureExtractionPipeline | null = null;
+const cachedEmbedders = new Map<string, FeatureExtractionPipeline>();
 let isWarmed = false;
 
-async function getEmbedder(): Promise<FeatureExtractionPipeline> {
-  if (!cachedEmbedder) {
-    // Keep the ONNX cache in the backend directory so it
-    // survives restarts and isn't pulled fresh each time.
+async function getEmbedder(modelName: string): Promise<FeatureExtractionPipeline> {
+  let embedder = cachedEmbedders.get(modelName);
+  if (!embedder) {
     transformersEnv.cacheDir = './.cache/transformers';
     transformersEnv.allowLocalModels = true;
-    cachedEmbedder = await pipeline(
+    embedder = await pipeline(
       'feature-extraction',
-      MODEL_SLUG,
+      modelName,
       { dtype: 'fp32' },
     ) as FeatureExtractionPipeline;
+    cachedEmbedders.set(modelName, embedder);
     isWarmed = true;
   }
-  return cachedEmbedder;
+  return embedder;
 }
 
-/** Warm up the in-process embedding pipeline (no-op if using API). */
+/** Warm up the in-process embedding pipeline. */
 export const warmEmbedder = async (): Promise<void> => {
-  if (shouldUseHfApi()) return;  // nothing to warm
-  await getEmbedder();
+  const { provider, model } = await getActiveEmbeddingConfig();
+  if (provider !== 'local') return;
+  await getEmbedder(model);
 };
 
 /**
  * Generate an embedding for a DOCUMENT (FAQ, post, etc.).
- * No prompt prefix — the mxbai paper says don't use the
- * retrieval prompt for documents, only for queries.
  */
-export const generateEmbedding = async (text: string): Promise<number[]> => {
-  if (shouldUseHfApi()) {
-    return callHfApiEmbedding(text);
+export const generateEmbedding = async (text: string, options?: { batchId?: string | null }): Promise<number[]> => {
+  const { provider, model, dimensions, baseURL, apiKey } = await getActiveEmbeddingConfig(options?.batchId);
+
+  if (provider === 'huggingface') {
+    return callHfApiEmbedding(text, apiKey, model);
   }
-  const embedder = await getEmbedder();
+  
+  if (provider === 'openai' || provider === 'custom') {
+    return callOpenAiEmbedding(text, apiKey, model, baseURL, dimensions);
+  }
+
+  // Fallback to local in-process ONNX pipeline
+  const embedder = await getEmbedder(model);
   const output = await embedder(text, {
     pooling: 'cls',
     normalize: true,
@@ -261,12 +269,9 @@ export const generateEmbedding = async (text: string): Promise<number[]> => {
 
 /**
  * Generate an embedding for a SEARCH QUERY.
- * Prepends the retrieval prompt per the mxbai paper. Use
- * this (NOT generateEmbedding) for any text that should be
- * matched against stored document vectors.
  */
-export const generateQueryEmbedding = async (query: string): Promise<number[]> => {
-  return generateEmbedding(QUERY_PROMPT + query);
+export const generateQueryEmbedding = async (query: string, options?: { batchId?: string | null }): Promise<number[]> => {
+  return generateEmbedding(QUERY_PROMPT + query, options);
 };
 
 /** Re-export for diagnostic scripts. True if a warm in-process pipeline exists. */

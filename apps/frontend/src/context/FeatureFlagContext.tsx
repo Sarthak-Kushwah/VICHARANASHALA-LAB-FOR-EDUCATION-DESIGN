@@ -58,6 +58,12 @@ export function FeatureFlagProvider({ children }: ProviderProps): React.ReactEle
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    if (!isAuthenticated) {
+      setFlags({});
+      setError(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const res = await api.get<{ flags: FeatureFlag[] }>('/feature-flags');
@@ -74,7 +80,7 @@ export function FeatureFlagProvider({ children }: ProviderProps): React.ReactEle
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => { void load(); }, [load, isAuthenticated]);
 

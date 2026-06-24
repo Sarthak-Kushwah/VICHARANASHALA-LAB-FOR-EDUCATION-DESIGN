@@ -43,6 +43,7 @@
 import 'dotenv/config';
 import mongoose from 'mongoose';
 import { execSync } from 'child_process';
+import { getActiveEmbeddingConfig } from '../utils/ai/embeddings.js';
 
 interface CliArgs {
   mongodbUri: string;
@@ -257,9 +258,16 @@ async function main(): Promise<void> {
   //      - yaksha_transcript_knowledge (auto-extracted KB,
   //        used by the /api/ask-ai auto-answer pipeline
   //        as the zero-human "knowledge base" path)
-  await step('Create vector search indexes (mxbai 1024-dim)', async () => {
+  await step('Create vector search indexes', async () => {
     const db = mongoose.connection.db!;
-    const EMBEDDING_DIM = 1024;
+    let embeddingDim = 1024;
+    try {
+      const config = await getActiveEmbeddingConfig();
+      embeddingDim = config.dimensions;
+    } catch (err) {
+      console.warn(`[setup] Could not fetch active embedding dimensions: ${(err as Error).message}. Using default 1024.`);
+    }
+
     // v1.68.1 — the actual Atlas search-index spec. Previous
     // version of this script used `mappings.vectorSearch`
     // which isn't a real Atlas format — the index got
@@ -273,7 +281,7 @@ async function main(): Promise<void> {
           {
             type: 'knnVector',
             path: 'embedding',
-            numDimensions: EMBEDDING_DIM,
+            numDimensions: embeddingDim,
             similarity: 'dotProduct',
           },
         ],
@@ -294,7 +302,7 @@ async function main(): Promise<void> {
     for (const collName of ['yaksha_faq_faqs', 'yaksha_faq_communityposts', 'yaksha_transcript_knowledge']) {
       try {
         await db.collection(collName).createSearchIndex(VECTOR_INDEX);
-        console.log(`  - created ${collName}.vector_index (1024-dim, dotProduct)`);
+        console.log(`  - created ${collName}.vector_index (${embeddingDim}-dim, dotProduct)`);
       } catch (err) {
         const e = err as { code?: number; message?: string };
         if (e.code === 85 || e.message?.includes('already exists')) {

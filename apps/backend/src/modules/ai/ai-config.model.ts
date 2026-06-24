@@ -42,6 +42,14 @@ export interface IProviderOverride {
   model: string;
 }
 
+export interface IEmbeddingConfig {
+  provider: 'local' | 'huggingface' | 'openai' | 'custom';
+  model: string;
+  dimensions: number;
+  apiKeyCipher: string;
+  baseURL: string;
+}
+
 export interface IAiConfig extends Document {
   // v1.69 — Phase 4: null = global default, non-null = per-program
   // override. The unique partial index below enforces at most one
@@ -69,6 +77,9 @@ export interface IAiConfig extends Document {
     faqGeneration:       { enabled: boolean; model: string; temperature: number; maxTokens: number };
   };
 
+  // Dynamic Embedding Configuration (v1.72)
+  embedding: IEmbeddingConfig;
+
   usage: {
     totalRequests: number;
     totalEstimatedCost: number;
@@ -81,6 +92,8 @@ export interface IAiConfig extends Document {
   // Instance methods (implemented below on the schema)
   getApiKey(provider: AIProviderType): string | null;
   setApiKey(provider: AIProviderType, plainKey: string): void;
+  getEmbeddingApiKey(): string | null;
+  setEmbeddingApiKey(plainKey: string): void;
   publicView(): Record<string, unknown>;
 }
 
@@ -136,6 +149,24 @@ const aiConfigSchema = new Schema<IAiConfig>(
         knowledgeExtraction: { enabled: true, model: 'claude-sonnet-4-20250514', temperature: 0.2, maxTokens: 2048 },
         searchSummarization: { enabled: true, model: 'claude-sonnet-4-20250514', temperature: 0.3, maxTokens: 512 },
         faqGeneration:       { enabled: true, model: 'claude-sonnet-4-20250514', temperature: 0.4, maxTokens: 1024 },
+      }),
+    },
+
+    embedding: {
+      type: {
+        provider: { type: String, enum: ['local', 'huggingface', 'openai', 'custom'], default: 'local' },
+        model: { type: String, default: 'mixedbread-ai/mxbai-embed-large-v1' },
+        dimensions: { type: Number, default: 1024 },
+        apiKeyCipher: { type: String, default: '' },
+        baseURL: { type: String, default: '' },
+      },
+      required: true,
+      default: () => ({
+        provider: 'local',
+        model: 'mixedbread-ai/mxbai-embed-large-v1',
+        dimensions: 1024,
+        apiKeyCipher: '',
+        baseURL: '',
       }),
     },
 
@@ -198,6 +229,25 @@ aiConfigSchema.methods.setApiKey = function (provider: AIProviderType, plainKey:
   self.providers[provider].apiKeyCipher = plainKey ? encrypt(plainKey) : '';
 };
 
+aiConfigSchema.methods.getEmbeddingApiKey = function (): string | null {
+  const cipher = (this as unknown as IAiConfig).embedding?.apiKeyCipher;
+  if (!cipher) return null;
+  try {
+    return decrypt(cipher);
+  } catch (err) {
+    logger.warn(`[AiConfig] Failed to decrypt embedding API key: ${(err as Error).message}`);
+    return null;
+  }
+};
+
+aiConfigSchema.methods.setEmbeddingApiKey = function (plainKey: string) {
+  const self = this as unknown as IAiConfig;
+  if (!self.embedding) {
+    self.embedding = { provider: 'local', model: 'mixedbread-ai/mxbai-embed-large-v1', dimensions: 1024, apiKeyCipher: '', baseURL: '' };
+  }
+  self.embedding.apiKeyCipher = plainKey ? encrypt(plainKey) : '';
+};
+
 aiConfigSchema.methods.publicView = function () {
   const self = this as unknown as IAiConfig;
   const obj = self.toObject();
@@ -210,7 +260,17 @@ aiConfigSchema.methods.publicView = function () {
       model: prov.model ?? '',
     };
   }
-  return { ...obj, providers: view };
+  return {
+    ...obj,
+    providers: view,
+    embedding: {
+      provider: obj.embedding?.provider || 'local',
+      model: obj.embedding?.model || 'mixedbread-ai/mxbai-embed-large-v1',
+      dimensions: obj.embedding?.dimensions || 1024,
+      baseURL: obj.embedding?.baseURL || '',
+      hasKey: !!obj.embedding?.apiKeyCipher,
+    }
+  };
 };
 
 const AiConfig = mongoose.model<IAiConfig>('AiConfig', aiConfigSchema, 'yaksha_faq_ai_config');

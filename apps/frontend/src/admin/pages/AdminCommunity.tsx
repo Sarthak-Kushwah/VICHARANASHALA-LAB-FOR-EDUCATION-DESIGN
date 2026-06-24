@@ -4,8 +4,7 @@ import adminApi from '../utils/adminApi';
 import Badge from '../components/common/Badge';
 import Modal from '../components/common/Modal';
 import { TableSkeleton } from '../components/common/SkeletonLoader';
-
-function useDebounce<T>(value: T, delay: number): T { const [v, setV] = useState(value); useEffect(() => { const t = setTimeout(() => setV(value), delay); return () => clearTimeout(t); }, [value, delay]); return v; }
+import { useDebounce } from '../../hooks/useDebounce';
 interface CommunityPost { _id: string; title: string; body: string; status: 'answered' | 'unanswered'; author: { _id: string; name: string; email: string }; comments: Array<{ _id: string; body: string; author: { name: string }; verified: boolean }>; upvotes: string[]; createdAt: string; answer?: string; reports?: Array<{ reportedBy: string; reason: string; createdAt?: string }>; }
 interface CommunityPostsResponse { posts: CommunityPost[]; total: number; page: number; pages: number; }
 interface Toast { msg: string; type: 'success' | 'warn' | 'error'; }

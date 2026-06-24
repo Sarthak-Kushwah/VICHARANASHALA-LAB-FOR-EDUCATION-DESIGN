@@ -32,6 +32,7 @@
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import { EMBEDDING_DIM } from '../utils/ai/embeddings.js';
+import AiConfig from '../modules/ai/ai-config.model.js';
 
 dotenv.config();
 dotenv.config({ path: '.env.local' });
@@ -52,6 +53,9 @@ async function createIndexes() {
 
   const faqCollection = db.collection('yaksha_faq_faqs');
   const postCollection = db.collection('yaksha_faq_communityposts');
+
+  const config = await AiConfig.findOne({ batchId: null, isActive: true });
+  const activeDimensions = config?.embedding?.dimensions || EMBEDDING_DIM;
 
   // Atlas Vector Search definition — TWO valid shapes:
   //
@@ -78,14 +82,14 @@ async function createIndexes() {
         {
           type: 'knnVector',
           path: 'embedding',
-          numDimensions: EMBEDDING_DIM,
+          numDimensions: activeDimensions,
           similarity: 'dotProduct',
         },
       ],
     },
   };
 
-  console.log(`\nIndex target: dimensions=${EMBEDDING_DIM} similarity=dotProduct`);
+  console.log(`\nIndex target: dimensions=${activeDimensions} similarity=dotProduct`);
 
   if (SHOULD_DROP) {
     console.log('\n[--drop] Removing existing vector_index from both collections…');

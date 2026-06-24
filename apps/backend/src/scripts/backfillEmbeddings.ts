@@ -19,18 +19,28 @@ import dotenv from 'dotenv';
 dotenv.config();
 dotenv.config({ path: '.env.local' });
 import mongoose from 'mongoose';
-import { generateEmbedding, EMBEDDING_DIM, MODEL_SLUG } from '../utils/ai/embeddings.js';
+import { generateEmbedding, getActiveEmbeddingConfig, EMBEDDING_DIM, MODEL_SLUG } from '../utils/ai/embeddings.js';
 
 const FAQ_COLL = 'yaksha_faq_faqs';
 const COMM_COLL = 'yaksha_faq_communityposts';
 
 async function main() {
   if (!process.env.MONGODB_URI) { console.error('MONGODB_URI not set.'); process.exit(1); }
-  const usingApi = !!process.env.HUGGINGFACE_API_KEY?.trim();
-  console.log(`Model: ${MODEL_SLUG} (${EMBEDDING_DIM}-dim, ${usingApi ? 'HF Inference API' : 'in-process ONNX'})`);
-
   await mongoose.connect(process.env.MONGODB_URI);
   const db = mongoose.connection.db!;
+
+  let modelSlug = MODEL_SLUG;
+  let embeddingDim = EMBEDDING_DIM;
+  try {
+    const config = await getActiveEmbeddingConfig();
+    modelSlug = config.model;
+    embeddingDim = config.dimensions;
+  } catch (err) {
+    console.warn(`[backfill] Could not resolve active embedding configuration: ${(err as Error).message}`);
+  }
+
+  const usingApi = !!process.env.HUGGINGFACE_API_KEY?.trim();
+  console.log(`Model: ${modelSlug} (${embeddingDim}-dim, ${usingApi ? 'HF Inference API' : 'in-process ONNX'})`);
 
   const faqColl = db.collection(FAQ_COLL);
   const commColl = db.collection(COMM_COLL);

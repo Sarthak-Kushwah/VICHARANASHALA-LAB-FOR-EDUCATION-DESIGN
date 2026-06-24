@@ -9,10 +9,12 @@ import { useBatch } from '../../context/BatchContext';
 
 interface ProviderOverride { hasKey: boolean; baseURL: string; model: string; }
 interface AiFeatureConfig { enabled: boolean; model: string; temperature: number; maxTokens: number; }
+interface EmbeddingConfig { provider: 'local' | 'huggingface' | 'openai' | 'custom'; model: string; dimensions: number; baseURL: string; hasKey: boolean; }
 interface AiConfig {
   activeProvider: 'anthropic' | 'openai' | 'xai' | 'minimax' | 'gemini' | 'custom';
   providers: { anthropic: ProviderOverride; openai: ProviderOverride; xai: ProviderOverride; minimax: ProviderOverride; gemini: ProviderOverride; custom: ProviderOverride; };
   features: { duplicateDetection: AiFeatureConfig; knowledgeExtraction: AiFeatureConfig; searchSummarization: AiFeatureConfig; faqGeneration: AiFeatureConfig; };
+  embedding: EmbeddingConfig;
   usage: { totalRequests: number; totalEstimatedCost: number; lastResetAt: string; };
   isActive: boolean;
 }
@@ -126,6 +128,27 @@ export default function AdminAISettings() {
   });
   const [savingProviderDraft, setSavingProviderDraft] = useState<ProviderKey | null>(null);
 
+  const [embeddingDraft, setEmbeddingDraft] = useState<{
+    provider: 'local' | 'huggingface' | 'openai' | 'custom';
+    model: string;
+    dimensions: number;
+    apiKey: string;
+    baseURL: string;
+    showKey: boolean;
+    revealing: boolean;
+  }>({
+    provider: 'local',
+    model: 'mixedbread-ai/mxbai-embed-large-v1',
+    dimensions: 1024,
+    apiKey: '',
+    baseURL: '',
+    showKey: false,
+    revealing: false,
+  });
+  const [savingEmbeddingDraft, setSavingEmbeddingDraft] = useState(false);
+  const [testingEmbedding, setTestingEmbedding] = useState(false);
+  const [embeddingTestResult, setEmbeddingTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
   const loadConfig = useCallback(async () => {
     try {
       const res = await adminApi.get<AiConfig & { hasOverride?: boolean; source?: string }>('/admin/ai/config', {
@@ -143,6 +166,16 @@ export default function AdminAISettings() {
         }
         return next;
       });
+      if (data.embedding) {
+        setEmbeddingDraft(prev => ({
+          ...prev,
+          provider: data.embedding.provider || 'local',
+          model: data.embedding.model || 'mixedbread-ai/mxbai-embed-large-v1',
+          dimensions: data.embedding.dimensions || 1024,
+          baseURL: data.embedding.baseURL || '',
+          apiKey: '',
+        }));
+      }
     } catch { setError('Failed to load AI configuration.'); }
     finally { setLoading(false); }
   }, [activeBatchId]);
@@ -224,6 +257,67 @@ export default function AdminAISettings() {
       if (key) setProviderDrafts(prev => ({ ...prev, [provider]: { ...prev[provider], apiKey: key, showKey: true, revealing: false } }));
       else { setProviderDrafts(prev => ({ ...prev, [provider]: { ...prev[provider], revealing: false } })); setError(`${PROVIDER_META[provider].label} has no API key configured.`); setTimeout(() => setError(''), 4000); }
     } catch { setProviderDrafts(prev => ({ ...prev, [provider]: { ...prev[provider], revealing: false } })); setError('Failed to reveal API key.'); }
+  };
+
+  const handleSaveEmbeddingDraft = async () => {
+    setSavingEmbeddingDraft(true); setError(''); setSuccess('');
+    try {
+      const body: Record<string, unknown> = {
+        embedding: {
+          provider: embeddingDraft.provider,
+          model: embeddingDraft.model,
+          dimensions: embeddingDraft.dimensions,
+          baseURL: embeddingDraft.baseURL,
+          ...(embeddingDraft.apiKey ? { apiKey: embeddingDraft.apiKey } : {}),
+        },
+        batchId: activeBatchId ?? null,
+      };
+      await adminApi.patch('/admin/ai/config', body);
+      setSuccess(`Embedding configuration saved.`);
+      setEmbeddingDraft(prev => ({ ...prev, apiKey: '' }));
+      setTimeout(() => setSuccess(''), 3000); loadConfig();
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to save embedding configuration.');
+    } finally {
+      setSavingEmbeddingDraft(false);
+    }
+  };
+
+  const handleRevealEmbeddingKey = async () => {
+    setEmbeddingDraft(prev => ({ ...prev, revealing: true }));
+    try {
+      const res = await adminApi.get<{ apiKey: string | null }>(`/admin/ai/config/api-key/embedding`);
+      const key = res.data.apiKey;
+      if (key) setEmbeddingDraft(prev => ({ ...prev, apiKey: key, showKey: true, revealing: false }));
+      else { setEmbeddingDraft(prev => ({ ...prev, revealing: false })); setError(`Embedding has no API key configured.`); setTimeout(() => setError(''), 4000); }
+    } catch { setEmbeddingDraft(prev => ({ ...prev, revealing: false })); setError('Failed to reveal API key.'); }
+  };
+
+  const handleClearEmbeddingKey = async () => {
+    if (!confirm(`Clear the stored embedding API key?`)) return;
+    setSavingEmbeddingDraft(true); setError('');
+    try {
+      await adminApi.patch('/admin/ai/config', { embedding: { apiKey: '' }, batchId: activeBatchId ?? null });
+      setSuccess(`Embedding API key cleared.`);
+      setEmbeddingDraft(prev => ({ ...prev, apiKey: '' }));
+      setTimeout(() => setSuccess(''), 3000); loadConfig();
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to clear API key.');
+    } finally {
+      setSavingEmbeddingDraft(false);
+    }
+  };
+
+  const handleTestEmbedding = async () => {
+    setTestingEmbedding(true); setEmbeddingTestResult(null);
+    try {
+      const res = await adminApi.get<{ ok: boolean; message: string }>('/admin/ai/providers/test', { params: { provider: 'embedding' } });
+      setEmbeddingTestResult({ ok: res.data.ok, message: res.data.message });
+    } catch (err: any) {
+      setEmbeddingTestResult({ ok: false, message: err.response?.data?.message || 'Connection failed' });
+    } finally {
+      setTestingEmbedding(false);
+    }
   };
 
   if (loading) {
@@ -392,6 +486,178 @@ export default function AdminAISettings() {
               </div>
             );
           })}
+        </div>
+      </div>
+
+      {/* ── Embedding Configuration ─────────────────────────────── */}
+      <div className="admin-card-surface border border-accent/20 bg-accent/5">
+        <div className="admin-card-header bg-accent/10 border-b border-accent/20">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-accent">🧬 Embedding Model Configuration</p>
+              <p className="text-xs text-ink-faint mt-0.5">Manage semantic vector generation settings for search and duplicate detection.</p>
+            </div>
+            {config?.embedding?.hasKey ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />Configured
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border bg-amber-500/10 text-amber-400 border-amber-500/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />Env / Local Default
+              </span>
+            )}
+          </div>
+        </div>
+        
+        <div className="p-5 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Embedding Provider */}
+            <div>
+              <label className="block text-[10px] font-semibold text-ink-faint uppercase mb-1">Embedding Provider</label>
+              <select
+                value={embeddingDraft.provider}
+                onChange={e => setEmbeddingDraft(prev => ({ ...prev, provider: e.target.value as any }))}
+                className="w-full px-3 py-2 rounded-lg text-xs border bg-bg-secondary text-ink focus:outline-none transition-colors admin-input"
+              >
+                <option value="local">Local (In-Process Transformers)</option>
+                <option value="huggingface">HuggingFace Inference API</option>
+                <option value="openai">OpenAI Embeddings API</option>
+                <option value="custom">Custom OpenAI-Compatible API</option>
+              </select>
+              <p className="text-[10px] text-ink-faint mt-1 font-sans">
+                {embeddingDraft.provider === 'local' && 'Runs locally using in-process ONNX model (no API key needed).'}
+                {embeddingDraft.provider === 'huggingface' && 'Calls HuggingFace model server. Requires HF API Key.'}
+                {embeddingDraft.provider === 'openai' && 'Calls OpenAI API. Requires dedicated OpenAI API key.'}
+                {embeddingDraft.provider === 'custom' && 'Calls custom endpoint (e.g. Ollama, vLLM, self-hosted API).'}
+              </p>
+            </div>
+
+            {/* Vector Dimensions */}
+            <div>
+              <label className="block text-[10px] font-semibold text-ink-faint uppercase mb-1">Vector Dimensions</label>
+              <input
+                type="number"
+                value={embeddingDraft.dimensions}
+                onChange={e => setEmbeddingDraft(prev => ({ ...prev, dimensions: parseInt(e.target.value) || 1024 }))}
+                className={monoInput}
+                placeholder="1024"
+                min="1"
+              />
+              <p className="text-[10px] text-ink-faint mt-1 font-sans">
+                Must match your MongoDB Search Index (default: 1024). OpenAI models support truncation.
+              </p>
+            </div>
+          </div>
+
+          {/* Model Name */}
+          <div>
+            <label className="block text-[10px] font-semibold text-ink-faint uppercase mb-1">Model Name / Slug</label>
+            <input
+              type="text"
+              list="embedding-suggested-models"
+              value={embeddingDraft.model}
+              onChange={e => setEmbeddingDraft(prev => ({ ...prev, model: e.target.value }))}
+              placeholder="mixedbread-ai/mxbai-embed-large-v1"
+              className={monoInput}
+            />
+            <datalist id="embedding-suggested-models">
+              <option value="mixedbread-ai/mxbai-embed-large-v1" />
+              <option value="text-embedding-3-small" />
+              <option value="text-embedding-3-large" />
+              <option value="text-embedding-ada-002" />
+            </datalist>
+            <p className="text-[10px] text-ink-faint mt-1 font-sans">
+              Model identifier used by the provider.
+            </p>
+          </div>
+
+          {/* Base URL (Conditionally shown for API providers) */}
+          {embeddingDraft.provider !== 'local' && (
+            <div>
+              <label className="block text-[10px] font-semibold text-ink-faint uppercase mb-1">Base URL / Endpoint URL</label>
+              <input
+                type="text"
+                value={embeddingDraft.baseURL}
+                onChange={e => setEmbeddingDraft(prev => ({ ...prev, baseURL: e.target.value }))}
+                placeholder={
+                  embeddingDraft.provider === 'huggingface' ? 'https://router.huggingface.co/hf-inference/models' :
+                  embeddingDraft.provider === 'openai' ? 'https://api.openai.com/v1' : 'http://localhost:11434/v1'
+                }
+                className={monoInput}
+              />
+              <p className="text-[10px] text-ink-faint mt-1 font-sans">
+                Custom endpoint gateway for the embedding provider.
+              </p>
+            </div>
+          )}
+
+          {/* API Key (Conditionally shown for API providers) */}
+          {embeddingDraft.provider !== 'local' && (
+            <div>
+              <label className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-semibold text-ink-faint uppercase">API Key</span>
+                {config?.embedding?.hasKey && (
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <button type="button" onClick={handleRevealEmbeddingKey} disabled={embeddingDraft.revealing} className="text-accent hover:text-accent-hover font-medium disabled:opacity-50 font-sans">
+                      {embeddingDraft.revealing ? 'Revealing…' : embeddingDraft.showKey ? 'Hide' : 'Reveal'}
+                    </button>
+                    <span className="text-border-medium">·</span>
+                    <button type="button" onClick={handleClearEmbeddingKey} disabled={savingEmbeddingDraft} className="text-danger hover:text-danger/80 font-medium disabled:opacity-50 font-sans">Clear</button>
+                  </div>
+                )}
+              </label>
+              <input
+                type={embeddingDraft.showKey ? 'text' : 'password'}
+                value={embeddingDraft.apiKey}
+                onChange={e => setEmbeddingDraft(prev => ({ ...prev, apiKey: e.target.value, showKey: true }))}
+                placeholder={config?.embedding?.hasKey ? '•••••••••••••• (stored) — type to replace' : 'Paste your API key here…'}
+                autoComplete="off"
+                className={monoInput}
+              />
+            </div>
+          )}
+
+          {/* Action buttons + Warning Info Box */}
+          <div className="pt-2 border-t border-border flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleTestEmbedding}
+                disabled={testingEmbedding}
+                className="admin-btn-secondary px-3 py-1.5 text-xs flex items-center gap-1.5 font-sans"
+              >
+                {testingEmbedding ? (
+                  <><span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />Testing…</>
+                ) : 'Test Connection'}
+              </button>
+              {embeddingTestResult && (
+                <span className={`text-xs font-semibold font-sans ${embeddingTestResult.ok ? 'text-success' : 'text-danger'}`}>
+                  {embeddingTestResult.ok ? '✓ Connected' : `✕ ${embeddingTestResult.message}`}
+                </span>
+              )}
+            </div>
+            
+            <button
+              type="button"
+              onClick={handleSaveEmbeddingDraft}
+              disabled={savingEmbeddingDraft}
+              className="admin-btn-primary px-4 py-1.5 text-xs font-sans"
+            >
+              {savingEmbeddingDraft ? 'Saving…' : 'Save Embedding settings'}
+            </button>
+          </div>
+
+          {/* Vector Index Dimension Mismatch Warning Alert Box */}
+          {config?.embedding && config.embedding.dimensions !== embeddingDraft.dimensions && (
+            <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-400 space-y-1 font-sans">
+              <p className="font-semibold">⚠️ Attention: Vector Dimension Change Detected</p>
+              <p>You have changed the dimensions from <strong>{config.embedding.dimensions}</strong> to <strong>{embeddingDraft.dimensions}</strong>.</p>
+              <p>To prevent search query crashes, you must drop/recreate the MongoDB Search Index and backfill all embeddings by running:</p>
+              <pre className="p-2 bg-black/40 rounded text-[10px] font-mono text-ink mt-1 select-all">
+                npm run create:vector-index -- --drop && npm run backfill:embeddings
+              </pre>
+            </div>
+          )}
         </div>
       </div>
 

@@ -8,6 +8,7 @@ import { buildGcsTransformedUrl } from '../../utils/gcsTransform';
 import type { GcsAsset } from '../../hooks/useGcsUpload';
 import type { Post, Comment } from '../../types/ui';
 import { idMatches } from '../../utils/idMatch';
+import ThreadBookmarkButton from './ThreadBookmarkButton';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const formatDate = (d: string | undefined) =>
@@ -586,6 +587,36 @@ export default function PostDetailDialog({ post: initialPost, onClose, currentUs
     } finally { setReportLoading(false); }
   };
 
+  const isBookmarked = Boolean(
+    post.bookmarks?.some(
+      b => (typeof b === 'object' ? (b as { _id?: string })._id : b)?.toString() === currentUserId
+    )
+  );
+
+  const handleBookmark = async () => {
+    const prev = post.bookmarks || [];
+    const currentlyBookmarked = prev.some(
+      b => (typeof b === 'object' ? (b as { _id?: string })._id : b)?.toString() === currentUserId
+    );
+    const next = currentlyBookmarked
+      ? prev.filter(b => (typeof b === 'object' ? (b as { _id?: string })._id : b)?.toString() !== currentUserId)
+      : [...prev, currentUserId];
+
+    setPost(p => ({ ...p, bookmarks: next }));
+    try {
+      await api.post(`/community/${post._id}/bookmark`);
+      const b = document.createElement('div');
+      b.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] px-4 py-2 bg-card border border-border rounded-xl text-xs text-ink font-medium shadow-lg';
+      b.textContent = currentlyBookmarked ? 'Bookmark removed' : 'Bookmarked';
+      document.body.appendChild(b);
+      setTimeout(() => b.remove(), 2000);
+    } catch (e) {
+      setPost(p => ({ ...p, bookmarks: prev }));
+      setActionError(friendlyError(e, 'Could not update bookmark. Please try again.'));
+      setTimeout(() => setActionError(null), 3000);
+    }
+  };
+
   const handleShare = () => {
     const url = `${window.location.origin}/community?post=${post._id}`;
     if (navigator.share) {
@@ -697,13 +728,10 @@ export default function PostDetailDialog({ post: initialPost, onClose, currentUs
               {post.comments?.length ?? 0}
             </div>
             {currentUserId && (
-              <button onClick={async () => { await api.post(`/community/${post._id}/bookmark`); const b = document.createElement('div'); b.className='fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] px-4 py-2 bg-card border border-border rounded-xl text-xs text-ink font-medium shadow-lg'; b.textContent='Bookmarked'; document.body.appendChild(b); setTimeout(()=>b.remove(),2000); }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm text-ink-soft bg-mist hover:bg-border transition-all">
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <path d="M3 2C3 1.17 3.67 0.5 4.5 0.5h5C10.33 0.5 11 1.17 11 2v9L8 8.5 5 11V2z" strokeLinejoin="round"/>
-                </svg>
-                Save
-              </button>
+              <ThreadBookmarkButton
+                isBookmarked={isBookmarked}
+                onToggle={handleBookmark}
+              />
             )}
             <button onClick={handleShare}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm text-ink-soft bg-mist hover:bg-border transition-all">

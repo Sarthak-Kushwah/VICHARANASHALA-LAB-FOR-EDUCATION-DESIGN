@@ -26,7 +26,9 @@
 import 'dotenv/config';
 import mongoose from 'mongoose';
 import { calculateTier } from '../modules/auth/user.model.js';
-import { EMBEDDING_DIM } from '../utils/ai/embeddings.js';
+import { getActiveEmbeddingConfig } from '../utils/ai/embeddings.js';
+
+let EMBEDDING_DIM = 1024;
 
 const MONGO_URI = process.env.MONGODB_URI!;
 if (!MONGO_URI) {
@@ -254,6 +256,13 @@ async function main() {
 
   await mongoose.connect(MONGO_URI);
   const db = mongoose.connection.db!;
+
+  try {
+    const config = await getActiveEmbeddingConfig();
+    EMBEDDING_DIM = config.dimensions;
+  } catch (err) {
+    console.warn(`[audit] Could not resolve active embedding dimensions, using default 1024: ${(err as Error).message}`);
+  }
 
   await auditUsers(db);
   await auditFAQs(db);

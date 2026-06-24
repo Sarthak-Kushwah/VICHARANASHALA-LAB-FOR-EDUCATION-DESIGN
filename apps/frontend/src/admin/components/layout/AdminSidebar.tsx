@@ -2,9 +2,10 @@ import React, { type ReactNode } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAdminAuth } from '../../hooks/useAdminAuth';
+import { useFeatureFlags } from '../../../context/FeatureFlagContext';
 
 interface NavItem {
-  to: string; label: string; icon: () => ReactNode; end?: boolean;
+  to: string; label: string; icon: () => ReactNode; end?: boolean; featureFlag?: string;
 }
 
 interface NavGroup {
@@ -25,9 +26,9 @@ const NAV: NavGroup[] = [
       { to: '/admin/faqs',           label: 'FAQs',          icon: DocIcon },
       { to: '/admin/welcome',        label: 'Welcome',       icon: SparkleIcon },
       { to: '/admin/programs',       label: 'Programs Hub',    icon: LayersIcon },
-      { to: '/admin/faqs/review',    label: 'FAQ Review',    icon: ShieldCheckIcon },
-      { to: '/admin/auto-answer',    label: 'AI Answers',    icon: SparkleIcon },
-      { to: '/admin/faq-audit',     label: 'FAQ Audit',     icon: StethoscopeIcon },
+      { to: '/admin/faqs/review',    label: 'FAQ Review',    icon: ShieldCheckIcon, featureFlag: 'faqFreshness' },
+      { to: '/admin/auto-answer',    label: 'AI Answers',    icon: SparkleIcon, featureFlag: 'aiAutoAnswer' },
+      { to: '/admin/faq-audit',     label: 'FAQ Audit',     icon: StethoscopeIcon, featureFlag: 'faqFreshness' },
       { to: '/admin/unresolved-search', label: 'FAQ Gaps',    icon: SearchMissIcon },
     ],
   },
@@ -48,16 +49,16 @@ const NAV: NavGroup[] = [
   {
     label: 'Support',
     items: [
-      { to: '/admin/support',           label: 'Inbox',         icon: SupportIcon },
-      { to: '/admin/support/analytics',  label: 'Analytics',     icon: ChartIcon },
-      { to: '/admin/support/categories', label: 'Schemas',       icon: ListIcon },
-      { to: '/admin/support/guidance',   label: 'Checklists',    icon: ChecklistIcon },
+      { to: '/admin/support',           label: 'Inbox',         icon: SupportIcon, featureFlag: 'sessionSupport' },
+      { to: '/admin/support/analytics',  label: 'Analytics',     icon: ChartIcon, featureFlag: 'sessionSupport' },
+      { to: '/admin/support/categories', label: 'Schemas',       icon: ListIcon, featureFlag: 'sessionSupport' },
+      { to: '/admin/support/guidance',   label: 'Checklists',    icon: ChecklistIcon, featureFlag: 'sessionSupport' },
     ],
   },
   {
     label: 'Golden Tickets',
     items: [
-      { to: '/admin/golden-tickets',     label: 'Queue',         icon: GoldenTicketIcon },
+      { to: '/admin/golden-tickets',     label: 'Queue',         icon: GoldenTicketIcon, featureFlag: 'goldenTicket' },
     ],
   },
   {
@@ -70,7 +71,7 @@ const NAV: NavGroup[] = [
     label: 'Data Sources',
     items: [
       { to: '/admin/zoom-meetings',  label: 'Zoom Meetings', icon: VideoIcon },
-      { to: '/admin/document-insights', label: 'Document Insights', icon: DocIcon },
+      { to: '/admin/document-insights', label: 'Document Insights', icon: DocIcon, featureFlag: 'documentPipeline' },
     ],
   },
   {
@@ -106,8 +107,17 @@ function LogoutIcon() { return <svg width="15" height="15" viewBox="0 0 24 24" f
 
 function SidebarContent({ onMobileClose }: { onMobileClose: () => void }) {
   const { logout, user } = useAdminAuth();
+  const { flags } = useFeatureFlags();
   const navigate = useNavigate();
   const handleLogout = () => { logout(); navigate('/'); };
+
+  const filteredNav = NAV.map((group) => {
+    const items = group.items.filter((item) => {
+      if (!item.featureFlag) return true;
+      return flags[item.featureFlag]?.enabled ?? false;
+    });
+    return { ...group, items };
+  }).filter((group) => group.items.length > 0);
 
   return (
     <div className="flex flex-col h-full bg-card border-r border-border">
@@ -128,7 +138,7 @@ function SidebarContent({ onMobileClose }: { onMobileClose: () => void }) {
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 overflow-y-auto">
-        {NAV.map((group) => (
+        {filteredNav.map((group) => (
           <div key={group.label} className="mb-4">
             <p className="px-3 py-1.5 text-[10px] font-semibold text-ink-faint uppercase tracking-widest">
               {group.label}

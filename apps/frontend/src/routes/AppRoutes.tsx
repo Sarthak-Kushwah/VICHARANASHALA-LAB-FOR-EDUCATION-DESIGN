@@ -125,31 +125,31 @@ export default function AppRoutes() {
           <Route path="/admin/community" element={<AdminRoute><AdminLayout><AdminCommunity /></AdminLayout></AdminRoute>} />
           <Route path="/admin/moderation" element={<AdminRoute><AdminLayout><AdminModeration /></AdminLayout></AdminRoute>} />
           <Route path="/admin/unresolved-search" element={<AdminRoute><AdminLayout><AdminUnresolvedSearch /></AdminLayout></AdminRoute>} />
-          <Route path="/admin/zoom-meetings" element={<AdminRoute><AdminLayout><AdminZoomMeetings /></AdminLayout></AdminRoute>} />
+           <Route path="/admin/zoom-meetings" element={<AdminRoute><AdminLayout><AdminZoomMeetings /></AdminLayout></AdminRoute>} />
           <Route path="/admin/zoom-insights" element={<AdminRoute><AdminLayout><AdminZoomInsights /></AdminLayout></AdminRoute>} />
-          <Route path="/admin/document-insights" element={<AdminRoute><AdminLayout><AdminDocumentInsights /></AdminLayout></AdminRoute>} />
+          <Route path="/admin/document-insights" element={<AdminRoute><AdminLayout><FeatureGate featureKey="documentPipeline" featureLabel="Document Pipeline"><AdminDocumentInsights /></FeatureGate></AdminLayout></AdminRoute>} />
           <Route path="/admin/settings/ai" element={<AdminRoute><AdminLayout><AdminAISettings /></AdminLayout></AdminRoute>} />
-          <Route path="/admin/faqs/review" element={<AdminRoute><AdminLayout><FaqReview /></AdminLayout></AdminRoute>} />
+          <Route path="/admin/faqs/review" element={<AdminRoute><AdminLayout><FeatureGate featureKey="faqFreshness" featureLabel="FAQ Freshness Review"><FaqReview /></FeatureGate></AdminLayout></AdminRoute>} />
           <Route path="/admin/welcome" element={<AdminRoute><AdminLayout><AdminWelcomePage /></AdminLayout></AdminRoute>} />
           <Route path="/admin/zoom" element={<AdminRoute><AdminLayout><AdminZoomAssessmentsPage /></AdminLayout></AdminRoute>} />
           <Route path="/admin/zoom/questions" element={<AdminRoute><AdminLayout><AdminZoomQuestionsPage /></AdminLayout></AdminRoute>} />
           <Route path="/admin/projects" element={<AdminRoute><AdminLayout><AdminProjectsPage /></AdminLayout></AdminRoute>} />
-          <Route path="/admin/auto-answer" element={<AdminRoute><AdminLayout><AdminAutoAnswerQueue /></AdminLayout></AdminRoute>} />
-          <Route path="/admin/faq-audit" element={<AdminRoute><AdminLayout><AdminFAQAudit /></AdminLayout></AdminRoute>} />
+          <Route path="/admin/auto-answer" element={<AdminRoute><AdminLayout><FeatureGate featureKey="aiAutoAnswer" featureLabel="AI Auto-Answer"><AdminAutoAnswerQueue /></FeatureGate></AdminLayout></AdminRoute>} />
+          <Route path="/admin/faq-audit" element={<AdminRoute><AdminLayout><FeatureGate featureKey="faqFreshness" featureLabel="FAQ Freshness Audit"><AdminFAQAudit /></FeatureGate></AdminLayout></AdminRoute>} />
           <Route path="/admin/batches" element={<AdminRoute><AdminLayout><AdminBatches /></AdminLayout></AdminRoute>} />
           <Route path="/admin/courses" element={<AdminRoute><AdminLayout><AdminCoursesPage /></AdminLayout></AdminRoute>} />
           <Route path="/admin/programs/:id/settings" element={<AdminRoute><AdminLayout><AdminProgramSettingsPage /></AdminLayout></AdminRoute>} />
           <Route path="/admin/programs/:id/categories" element={<AdminRoute><AdminLayout><AdminDynamicCategoriesPage /></AdminLayout></AdminRoute>} />
           <Route path="/admin/programs" element={<AdminRoute><AdminLayout><AdminProgramDashboard /></AdminLayout></AdminRoute>} />
           <Route path="/admin/programs/:id" element={<AdminRoute><AdminLayout><AdminProgramDetail /></AdminLayout></AdminRoute>} />
-
-          <Route path="/admin/support" element={<AdminRoute><AdminLayout><AdminSupportInbox /></AdminLayout></AdminRoute>} />
-          <Route path="/admin/support/analytics" element={<AdminRoute><AdminLayout><AdminSupportAnalytics /></AdminLayout></AdminRoute>} />
-          <Route path="/admin/support/guidance" element={<AdminRoute><AdminLayout><AdminSupportGuidance /></AdminLayout></AdminRoute>} />
-          <Route path="/admin/support/categories" element={<AdminRoute><AdminLayout><AdminSupportCategories /></AdminLayout></AdminRoute>} />
-          <Route path="/admin/golden-tickets" element={<AdminRoute><AdminLayout><AdminGoldenTickets /></AdminLayout></AdminRoute>} />
-          <Route path="/admin/support/:id" element={<AdminRoute><AdminLayout><AdminSupportTicket /></AdminLayout></AdminRoute>} />
-
+ 
+          <Route path="/admin/support" element={<AdminRoute><AdminLayout><FeatureGate featureKey="sessionSupport" featureLabel="Support Tickets"><AdminSupportInbox /></FeatureGate></AdminLayout></AdminRoute>} />
+          <Route path="/admin/support/analytics" element={<AdminRoute><AdminLayout><FeatureGate featureKey="sessionSupport" featureLabel="Support Analytics"><AdminSupportAnalytics /></FeatureGate></AdminLayout></AdminRoute>} />
+          <Route path="/admin/support/guidance" element={<AdminRoute><AdminLayout><FeatureGate featureKey="sessionSupport" featureLabel="Support Checklist"><AdminSupportGuidance /></FeatureGate></AdminLayout></AdminRoute>} />
+          <Route path="/admin/support/categories" element={<AdminRoute><AdminLayout><FeatureGate featureKey="sessionSupport" featureLabel="Support Schema"><AdminSupportCategories /></FeatureGate></AdminLayout></AdminRoute>} />
+          <Route path="/admin/golden-tickets" element={<AdminRoute><AdminLayout><FeatureGate featureKey="goldenTicket" featureLabel="Golden Ticket Queue"><AdminGoldenTickets /></FeatureGate></AdminLayout></AdminRoute>} />
+          <Route path="/admin/support/:id" element={<AdminRoute><AdminLayout><FeatureGate featureKey="sessionSupport" featureLabel="Support Ticket Detail"><AdminSupportTicket /></FeatureGate></AdminLayout></AdminRoute>} />
+ 
           <Route path="/admin/features" element={<AdminRoute><AdminLayout><AdminFeatures /></AdminLayout></AdminRoute>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
