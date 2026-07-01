@@ -278,7 +278,6 @@ export const updateOnboardingStatus = async (req: Request, res: Response): Promi
   try {
     const { userId } = req.params;
     const { projectAssigned, mentorAssigned, projectSelectionLocked } = req.body;
-    // @ts-ignore
     const adminId = req.user?._id;
 
     const User = (await import('../auth/user.model.js')).default;

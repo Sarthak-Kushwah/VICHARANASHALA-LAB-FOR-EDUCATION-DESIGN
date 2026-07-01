@@ -295,7 +295,7 @@ function CommentItem({ comment, post, currentUserId, userRole, onUpdate }: {
       `/community/${post._id}/comments/${comment._id}/downvote`
     );
     if (res.data.deleted) {
-      try { new Audio('/fahhhhh.mp3').play(); } catch (_) {}
+      try { new Audio('/fahhhhh.mp3').play(); } catch (_) { void 0 }
       onUpdate((post.comments as Comment[]).filter(c => c._id !== comment._id));
       return;
     }
