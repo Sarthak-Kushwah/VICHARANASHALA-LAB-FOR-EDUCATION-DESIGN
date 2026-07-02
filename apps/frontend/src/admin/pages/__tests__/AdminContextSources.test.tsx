@@ -269,7 +269,7 @@ describe('AdminContextSources', () => {
 
   it('deletes a web page on Delete click (calls DELETE then refetches)', async () => {
     setupGetMock({ webPages: paginated(sampleWebPages, 3) });
-    let deletedIds: string[] = [];
+    const deletedIds: string[] = [];
     mockApi.delete.mockImplementation((url: string) => {
       // url will be /admin/web-pages/wp2
       const m = /\/admin\/web-pages\/(.+)/.exec(url);
