@@ -93,6 +93,16 @@ jobs:
             cp apps/frontend/dist/index.html apps/frontend/dist/404.html
           fi
 
+      # Inline theme.js into index.html. Vite's public/ dir doesn't
+      # auto-copy .js files to dist/, so the production build leaves a
+      # <script src="/theme.js"></script> reference that 404s on Pages
+      # (where theme.js isn't served). The backend serves it via static
+      # middleware at /csfaq/theme.js, so it works in Docker production,
+      # but breaks the Pages preview. This script inlines the contents
+      # so the SPA can boot standalone.
+      - name: Inline theme.js
+        run: python3 scripts/inline-theme-js.py
+
       # Tell GitHub Pages to skip Jekyll processing of Vite's _next/
       # and other underscore-prefixed folders.
       - name: Add .nojekyll marker
