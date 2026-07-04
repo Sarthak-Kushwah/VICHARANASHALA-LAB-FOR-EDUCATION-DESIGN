@@ -105,6 +105,16 @@ export default function AdminAISettings() {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeBatchId = searchParams.get('batchId');
   const { availableBatches, currentBatch: activeProgram } = useBatch();
+  // v1.71 — derive the displayed program name from the URL-selected
+  // activeBatchId (not from BatchContext), so the "Saving as per-program
+  // override for X" label always matches the scope button that's actually
+  // selected. Without this, BatchContext.currentBatch could be a stale
+  // value (e.g. user picked a different scope in another tab) and the
+  // label would mislead.
+  const selectedBatch = activeBatchId
+    ? availableBatches.find((b) => b._id === activeBatchId)
+    : undefined;
+  const displayedBatchName = selectedBatch?.name ?? activeProgram?.name;
 
   const [config, setConfig] = useState<AiConfig | null>(null);
   const [hasOverride, setHasOverride] = useState(true);
@@ -378,9 +388,9 @@ export default function AdminAISettings() {
             ✓ Per-program override active
           </span>
         )}
-        {activeProgram && activeBatchId && (
+        {displayedBatchName && activeBatchId && (
           <span className="text-[10px] text-ink-faint ml-auto">
-            Saving as per-program override for <span className="font-semibold text-ink">{activeProgram.name}</span>
+            Saving as per-program override for <span className="font-semibold text-ink">{displayedBatchName}</span>
           </span>
         )}
       </div>
