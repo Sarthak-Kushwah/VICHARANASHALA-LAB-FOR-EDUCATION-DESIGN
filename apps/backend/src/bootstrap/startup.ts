@@ -222,9 +222,13 @@ export async function startup(config: any): Promise<void> {
   // on the hot path — it degrades to text-only matching when the
   // vector search can't run (see `search.controller.ts`). Manual
   // trigger via `POST /csfaq/api/warm` still works.
+  // 7 * 24 * 60 * 60 * 1000 = weekly. The auto-answer pipeline is
+  // text-based and doesn't depend on fresh embeddings, so weekly is
+  // enough. If embedding infra ever comes back online, the warm pass
+  // catches up any docs that were written since the last tick.
   if (await featureFlags.isEnabled('embeddingWarmCron')) {
     const { embedUnprocessedKnowledge } = await import('../modules/knowledge/knowledge-base.service.js');
-    const embeddingWarmIntervalMs = 60 * 60 * 1000; // 1 hour
+    const embeddingWarmIntervalMs = 7 * 24 * 60 * 60 * 1000;
     cronManager.register({
       name: 'embedding-warm',
       handler: async () => {
