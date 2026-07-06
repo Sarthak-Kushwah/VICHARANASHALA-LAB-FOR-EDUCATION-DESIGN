@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link data-mgx-overview="icon" rel="icon" href="./Yaksha.png" />
+    <title>Vicharanashala Internship — Login</title>
+    <link rel="stylesheet" href="./style.css">
+    <link rel="stylesheet" href="./login.css">
+</head>
+<body>
+    <div class="hero-wrapper login-page-wrapper">
+        <div class="hero-card login-hero-card">
+            <header class="site-header">
+                <div class="header-content">
+                    <div class="brand-banner">
+                        <img class="brand-logo yaksha-logo" src="./Yaksha.png" alt="Yaksha logo">
+                        <div class="brand-copy">
+                            <p class="brand-kicker">Vicharanashala Lab for Education Design</p>
+                            <p class="brand-subkicker">IIT Ropar internship FAQ hub</p>
+                        </div>
+                    </div>
+                    <nav class="site-nav">
+                        <a href="home.html" class="nav-link">Home</a>
+                        <a href="index.html" class="nav-link">FAQ</a>
+                        <a href="welcome.html" class="nav-link">Welcome</a>
+                        <a href="https://samagama.in/" class="nav-link">Community</a>
+                        <a href="signup.html" class="nav-link nav-get-started">Get Started</a>
+                    </nav>
+                </div>
+            </header>
+
+            <div class="login-container">
+                <div class="login-card">
+                    <div class="login-header">
+                        <h2>Welcome back Yaksha Mini FAQ</h2>
+                        <p>Sign in to continue to your dashboard</p>
+                    </div>
+                    
+                    <form class="login-form">
+                        <div class="input-group">
+                            <label for="email">Email Address</label>
+                            <div class="input-wrapper">
+                                <span class="input-icon">✉</span>
+                                <input type="email" id="email" placeholder="Enter your email" required>
+                            </div>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="password">Password</label>
+                            <div class="input-wrapper">
+                                <span class="input-icon">🔒</span>
+                                <input type="password" id="password" placeholder="Enter your password" required>
+                            </div>
+                        </div>
+
+                        <div class="form-actions">
+                            <label class="remember-me">
+                                <input type="checkbox">
+                                <span>Remember me</span>
+                            </label>
+                            <a href="#" class="forgot-password">Forgot password?</a>
+                        </div>
+
+                        <button type="submit" class="login-submit-btn">Sign In</button>
+                    </form>
+                    
+                    <div class="login-footer">
+                        <p>Don't have an account? <a href="signup.html">Create an Account</a></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="./auth.js"></script>
+</body>
+</html>
