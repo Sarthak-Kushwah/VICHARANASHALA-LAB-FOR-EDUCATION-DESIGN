@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="./Yaksha.png" />
+    <title>Home - Vicharanashala FAQ</title>
+    <link rel="stylesheet" href="./style.css">
+    <link rel="stylesheet" href="./home.css">
+</head>
+<body>
+    <div class="hero-wrapper">
+        <div class="hero-card">
+            <header class="site-header">
+                <div class="header-content">
+                    <div class="brand-banner">
+                        <img class="brand-logo" src="./Yaksha.png" alt="Yaksha logo">
+                        <div class="brand-copy">
+                            <p class="brand-kicker">Vicharanashala Lab for Education Design</p>
+                            <p class="brand-subkicker">Welcome Package</p>
+                        </div>
+                    </div>
+       <nav class="site-nav" style="display: flex; align-items: center; gap: 25px;">
+    <a href="home.html" class="nav-link">Home</a>
+    <a href="index.html" class="nav-link">FAQ</a>
+    <a href="welcome.html" class="nav-link">Welcome</a>
+    <a href="https://samagama.in/" class="nav-link">Community</a>
+    
+    <a href="signup.html" style="background: var(--accent); color: #fff; padding: 8px 24px; border-radius: 30px; text-decoration: none; font-weight: bold; font-size: 0.95rem; box-shadow: 0 4px 10px rgba(16, 185, 129, 0.3); transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 15px rgba(16, 185, 129, 0.4)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 10px rgba(16, 185, 129, 0.3)';">
+        Get Started
+    </a>
+</nav>
+                </div>
+            </header>
+
+            <div class="hero-content" style="grid-template-columns: 1fr; width: 100%; max-width: 100%; margin: 0 auto; padding-bottom: 60px;">
+                <div class="hero-mini-faq-card" style="text-align: center; display: flex; flex-direction: column; align-items: center; padding: 60px 40px; background: #eef2f6;">
+                    <h1 class="home-hero-title" style="color: #111; font-size: 3.5rem; margin-bottom: 20px;">Ask. Discover. Get Solved.</h1>
+                    <p class="home-hero-subtitle" style="color: #444; font-size: 1.1rem; margin-bottom: 20px;">Search your doubt or explore solved questions from the sections below.</p>
+                    <div class="home-hero-stats" style="color: #666; margin-bottom: 40px; font-weight: 600; font-size: 0.85rem; letter-spacing: 0.1em; text-transform: uppercase;">145 FAQS · 14 CATEGORIES</div>
+                    
+                    <div class="search-bar-container" style="background: #fff; border: 1px solid #ccc; max-width: 800px; width: 100%; display: flex; align-items: center; padding: 5px 15px; border-radius: 30px;">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="#666" stroke-width="2" fill="none" style="margin-right: 10px;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                        
+                        <input type="text" id="home-search-input" class="search-input" placeholder="Ask anything about your internship..." style="color: #111; width: 100%; border: none; outline: none; padding: 10px; background: transparent; font-size: 1rem;">
+                        
+                        <button id="voice-search-btn" style="background: transparent; border: none; cursor: pointer; font-size: 1.3rem; padding: 0 10px; transition: transform 0.2s;" title="Search by Voice">🎤</button>
+                        
+                        <button id="home-search-btn" class="search-btn" style="color: #fff; background: var(--accent); border: none; padding: 10px 25px; border-radius: 20px; cursor: pointer; font-weight: bold;">Search</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="faq-section-wrapper">
+        <main class="home-main">
+            
+            <div id="dynamic-faq-view" style="display: none; margin-bottom: 40px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2 id="dynamic-view-title" class="home-section-title" style="color: var(--accent);">Category Name</h2>
+                    
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <button id="open-faq-modal-btn" style="background: transparent; color: var(--accent); border: 1px dashed var(--accent); padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 0.95rem; font-weight: 500; transition: all 0.2s; display: flex; align-items: center; gap: 6px;" onmouseover="this.style.background='rgba(16, 185, 129, 0.1)'" onmouseout="this.style.background='transparent'">
+                            <span style="font-size: 1.1rem;">➕</span> Add FAQ
+                        </button>
+                        
+                        <button id="back-btn" style="background: transparent; border: 1px solid var(--accent); color: var(--accent); padding: 8px 18px; border-radius: 8px; font-size: 0.95rem; cursor: pointer; transition: all 0.3s ease; display: flex; align-items: center; gap: 8px;" onmouseover="this.style.background='var(--accent)'; this.style.color='#fff';" onmouseout="this.style.background='transparent'; this.style.color='var(--accent)';">
+                            <span>🔙</span> <span id="back-btn-text">Back</span>
+                        </button>
+                    </div>
+                </div>
+                <div id="dynamic-faq-list" class="faq-container"></div>
+            </div>
+            
+            <section class="home-3-col">
+                <div class="home-col-card" id="card-popular" style="cursor: pointer; transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-5px)'" onmouseout="this.style.transform='translateY(0)'">
+                    <div class="col-header">
+                        <div style="display: flex; align-items: center; font-family: 'Georgia', serif; font-size: 1.3rem;">
+                            <svg viewBox="0 0 24 24" width="22" height="22" stroke="var(--accent)" stroke-width="2" fill="none" style="margin-right: 8px;"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+                            Most Popular
+                        </div>
+                        <span style="color: var(--muted-dark); font-size: 0.8rem; font-weight: normal; letter-spacing: 0.05em;">LAST 30 DAYS</span>
+                    </div>
+                    <div class="list-item">
+                        <div class="item-number">1</div>
+                        <div class="item-content">
+                            <div class="item-title">Am facing technical issues on VLE platform, who to contact?</div>
+                            <div class="item-meta">Admins/Mentors • 15 answers • 244 views</div>
+                        </div>
+                    </div>
+                    <div class="list-item">
+                        <div class="item-number">2</div>
+                        <div class="item-content">
+                            <div class="item-title">Can the program team access the cohort Whatsapp?</div>
+                            <div class="item-meta">General queries • 8 answers • 198 views</div>
+                        </div>
+                    </div>
+                    <div class="list-item">
+                        <div class="item-number">3</div>
+                        <div class="item-content">
+                            <div class="item-title">How do I submit my NOC to the program team?</div>
+                            <div class="item-meta">Certificates • 4 answers • 150 views</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="home-col-card" id="card-recent" style="cursor: pointer; transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-5px)'" onmouseout="this.style.transform='translateY(0)'">
+                    <div class="col-header">
+                        <div style="display: flex; align-items: center; font-family: 'Georgia', serif; font-size: 1.3rem;">
+                            <svg viewBox="0 0 24 24" width="22" height="22" stroke="var(--accent)" stroke-width="2" fill="none" style="margin-right: 8px;"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                            Recent FAQs
+                        </div>
+                        <span style="color: var(--muted-dark); font-size: 0.8rem; font-weight: normal; letter-spacing: 0.05em;">NEWEST</span>
+                    </div>
+                    <div class="list-item">
+                        <div class="item-number">1</div>
+                        <div class="item-content">
+                            <div class="item-title">I'm facing server issues on VLE that can't resolve, what to do?</div>
+                            <div class="item-meta">Just now • 0 views</div>
+                        </div>
+                    </div>
+                    <div class="list-item">
+                        <div class="item-number">2</div>
+                        <div class="item-content">
+                            <div class="item-title">Can the program team access the cohort Whatsapp?</div>
+                            <div class="item-meta">10 mins ago • 14 views</div>
+                        </div>
+                    </div>
+                    <div class="list-item">
+                        <div class="item-number">3</div>
+                        <div class="item-content">
+                            <div class="item-title">How do I access Phase 2 GitHub Project?</div>
+                            <div class="item-meta">1 hr ago • 45 views</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="home-col-card">
+                    <div class="col-header">
+                        <div style="display: flex; align-items: center; font-family: 'Georgia', serif; font-size: 1.3rem;">
+                            <svg viewBox="0 0 24 24" width="22" height="22" stroke="var(--accent)" stroke-width="2" fill="none" style="margin-right: 8px;"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
+                            Browse Categories
+                        </div>
+                        <span style="color: var(--muted-dark); font-size: 0.8rem; font-weight: normal; letter-spacing: 0.05em;">14 TOPICS</span>
+                    </div>
+                    <div class="list-item" style="justify-content: space-between; align-items: center;">
+                        <div class="item-title" style="margin:0;">VIBE Platform</div>
+                        <div class="item-arrow">›</div>
+                    </div>
+                    <div class="list-item" style="justify-content: space-between; align-items: center;">
+                        <div class="item-title" style="margin:0;">Team Formation</div>
+                        <div class="item-arrow">›</div>
+                    </div>
+                    <div class="list-item" style="justify-content: space-between; align-items: center;">
+                        <div class="item-title" style="margin:0;">Phase 1 - Coursework, VLE...</div>
+                        <div class="item-arrow">›</div>
+                    </div>
+                    <div class="list-item" style="justify-content: space-between; align-items: center;">
+                        <div class="item-title" style="margin:0;">Spurti Points</div>
+                        <div class="item-arrow">›</div>
+                    </div>
+                    <a href="#all-categories-section" class="category-link">View all categories →</a>
+                </div>
+            </section>
+
+            <div class="home-section-header" id="all-categories-section">
+                <h2 class="home-section-title">All Categories</h2>
+                <a href="#" style="color: var(--muted-dark); font-size: 0.9rem;">14 found</a>
+            </div>
+            
+            <section class="home-all-categories">
+                <div class="category-row">
+                    <div class="cat-icon">💻</div>
+                    <div class="cat-details">
+                        <div class="cat-title">VIBE Platform</div>
+                        <div class="cat-count">32 FAQs</div>
+                    </div>
+                    <div class="item-arrow">›</div>
+                </div>
+                <div class="category-row">
+                    <div class="cat-icon">👥</div>
+                    <div class="cat-details">
+                        <div class="cat-title">Team Formation</div>
+                        <div class="cat-count">14 FAQs</div>
+                    </div>
+                    <div class="item-arrow">›</div>
+                </div>
+                <div class="category-row">
+                    <div class="cat-icon">📚</div>
+                    <div class="cat-details">
+                        <div class="cat-title">Phase 1 - coursework, VLE labs, and live sessions</div>
+                        <div class="cat-count">24 FAQs</div>
+                    </div>
+                    <div class="item-arrow">›</div>
+                </div>
+                <div class="category-row">
+                    <div class="cat-icon">📝</div>
+                    <div class="cat-details">
+                        <div class="cat-title">Rosetta - your internship journal</div>
+                        <div class="cat-count">10 FAQs</div>
+                    </div>
+                    <div class="item-arrow">›</div>
+                </div>
+                <div class="category-row">
+                    <div class="cat-icon">⭐</div>
+                    <div class="cat-details">
+                        <div class="cat-title">Spurti Points</div>
+                        <div class="cat-count">8 FAQs</div>
+                    </div>
+                    <div class="item-arrow">›</div>
+                </div>
+            </section>
+
+            <section class="home-insights-grid">
+                <div class="insights-left">
+                    <div class="home-section-header">
+                        <h2 class="home-section-title"><span style="color:var(--accent);">✔</span> Top Solved Today</h2>
+                        <a href="javascript:void(0)" id="card-popular-btn" style="color: var(--accent); font-size: 0.9rem; cursor: pointer;">View all →</a>
+                    </div>
+                    <div class="top-solved-cards">
+                        
+                        <div class="solved-card single-faq-card" data-search="python scripts" style="cursor: pointer; transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-3px)'" onmouseout="this.style.transform='translateY(0)'">
+                            <div class="solved-card-header">Solved 2 mins ago</div>
+                            <div class="solved-card-title">Can I execute python scripts in the VLE...</div>
+                            <div class="solved-card-footer">
+                                <span>👍 24</span> <span>💬 3</span>
+                            </div>
+                        </div>
+
+                        <div class="solved-card single-faq-card" data-search="naming convention" style="cursor: pointer; transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-3px)'" onmouseout="this.style.transform='translateY(0)'">
+                            <div class="solved-card-header">Solved 14 mins ago</div>
+                            <div class="solved-card-title">What is the naming convention for the...</div>
+                            <div class="solved-card-footer">
+                                <span>👍 15</span> <span>💬 1</span>
+                            </div>
+                        </div>
+
+                        <div class="solved-card single-faq-card" data-search="Self paced" style="cursor: pointer; transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-3px)'" onmouseout="this.style.transform='translateY(0)'">
+                            <div class="solved-card-header">Solved 1 hr ago</div>
+                            <div class="solved-card-title">Self paced moments around...</div>
+                            <div class="solved-card-footer">
+                                <span>👍 12</span> <span>💬 0</span>
+                            </div>
+                        </div>
+
+                        <div class="solved-card single-faq-card" data-search="stand up" style="cursor: pointer; transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-3px)'" onmouseout="this.style.transform='translateY(0)'">
+                            <div class="solved-card-header">Solved 2 hrs ago</div>
+                            <div class="solved-card-title">Issues from the morning stand up...</div>
+                            <div class="solved-card-footer">
+                                <span>👍 8</span> <span>💬 5</span>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+                
+                <div class="insights-right">
+                    <div class="home-section-header">
+                        <h2 class="home-section-title" style="font-size: 1.2rem;">Trending Issues</h2>
+                    </div>
+                    <div class="trending-panel">
+                        <div class="trending-item">
+                            <span>Repository visibility...</span>
+                            <span class="status-solved">Solved</span>
+                        </div>
+                        <div class="trending-item">
+                            <span>Zoom link missing...</span>
+                            <span class="status-solved">Solved</span>
+                        </div>
+                        <div class="trending-item">
+                            <span>Access to server logs...</span>
+                            <span class="status-solved">Solved</span>
+                        </div>
+                        <div class="trending-item">
+                            <span>GitHub commit history...</span>
+                            <span class="status-solved">Solved</span>
+                        </div>
+                        <div class="trending-item" style="justify-content: center; margin-top: 20px;">
+                            <a href="#" style="color: var(--muted-dark); font-size: 0.8rem;">More trending issues ✕</a>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="zoom-doubts-section">
+                <div style="font-size: 0.8rem; color: var(--muted-dark); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 5px;">From team meetings</div>
+                <h2 class="zoom-doubts-title">Doubts answered in your team's Zoom sessions, turned into FAQs</h2>
+                <p class="zoom-doubts-subtitle">Admins connect Zoom accounts. Meetings get transcribed, questions get extracted, and answers show up here for everyone to search.</p>
+                
+                <div class="zoom-flow">
+                    <div class="flow-step">
+                        <div class="flow-number">1</div>
+                        <h3 class="flow-title">Connect Zoom</h3>
+                        <p class="flow-desc">An admin links the team's Zoom account to start the integration.</p>
+                    </div>
+                    <div class="flow-step">
+                        <div class="flow-number">2</div>
+                        <h3 class="flow-title">Meetings get transcribed</h3>
+                        <p class="flow-desc">All meetings held under the linked account are automatically transcribed.</p>
+                    </div>
+                    <div class="flow-step">
+                        <div class="flow-number">3</div>
+                        <h3 class="flow-title">Answers become FAQs</h3>
+                        <p class="flow-desc">Questions answered directly by mentors are instantly added to the FAQ hub.</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="still-question-card">
+                <div class="still-question-info">
+                    <div class="avatar-stack">
+                        <svg viewBox="0 0 24 24" width="30" height="30" fill="var(--muted-dark)"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                    </div>
+                    <div>
+                        <h3 class="sq-title">Still have a question?</h3>
+                        <p class="sq-subtitle">Ask the community or post a doubt to mentors on Samagama.</p>
+                    </div>
+                </div>
+                <a href="https://samagama.in/" class="btn-primary" style="background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.1);">Ask the Community</a>
+            </section>
+            
+        </main>
+
+        <footer class="section-footer" style="text-align: center; color: var(--muted-dark); padding-bottom: 40px; margin-top: 40px;">
+            <img src="./Yaksha.png" alt="Footer Logo" style="width: 40px; margin-bottom: 20px; opacity: 0.5;">
+            <div style="margin-bottom: 20px; font-size: 0.9rem;">
+                <a href="home.html" style="margin: 0 10px; color: var(--muted-dark); text-decoration: none;">Home</a>
+                <a href="index.html" style="margin: 0 10px; color: var(--muted-dark); text-decoration: none;">FAQ</a>
+                <a href="https://samagama.in/" style="margin: 0 10px; color: var(--muted-dark); text-decoration: none;">Community</a>
+            </div>
+            <p style="font-size: 0.75rem;">© 2026 VICHARANASHALA INTERNSHIP FAQ HUB • MAINTAINED BY THE CORE DEV TEAM</p>
+        </footer>
+    </div>
+
+    <div class="chat-widget" id="chatWidget">
+        <div class="chat-header" id="chatHeader">
+            <div class="chat-header-info">
+                <span class="chat-icon">💬</span>
+                <div>
+                    <span class="chat-title">Yaksha-mini</span>
+                    <span class="chat-subtitle">● Answers from this site</span>
+                </div>
+            </div>
+            <button class="chat-close" id="chatClose">✕</button>
+        </div>
+        <div class="chat-body" id="chatBody">
+            <div class="chat-messages" id="chatMessages">
+                <div class="chat-message bot-message">
+                    <p>Hi! I can help answer questions about the Vicharanashala Internship. Type your question below.</p>
+                </div>
+            </div>
+            <div class="chat-input-area">
+                <input type="text" id="chatInput" class="chat-input" placeholder="Type a question...">
+                <button id="chatSend" class="chat-send">▶</button>
+            </div>
+        </div>
+    </div>
+    <button class="chat-toggle" id="chatToggle">
+        <span class="chat-toggle-icon">💬</span>
+    </button>
+
+
+    <div id="add-faq-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 9999; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+        <div style="background: #fff; width: 90%; max-width: 500px; padding: 30px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); position: relative;">
+            
+            <h2 style="margin-bottom: 20px; color: #111; font-size: 1.5rem;">📝 Submit a New Doubt/FAQ</h2>
+            <p style="color: #666; font-size: 0.9rem; margin-bottom: 20px;">Apna doubt aur uski category select karein. Community ya mentors iska answer update karenge.</p>
+            
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; color: #333; font-weight: bold; font-size: 0.9rem;">Category</label>
+                <select id="new-faq-category" style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; color: #111; background: #fafafa;">
+                    <option value="VIBE Platform">VIBE Platform</option>
+                    <option value="Team Formation">Team Formation</option>
+                    <option value="Rosetta">Rosetta (Journal)</option>
+                    <option value="Spurti Points">Spurti Points</option>
+                    <option value="General Queries">General Queries</option>
+                </select>
+            </div>
+
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; color: #333; font-weight: bold; font-size: 0.9rem;">Your Question</label>
+                <input type="text" id="new-faq-question" placeholder="Example: How to submit NOC?" style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; color: #111;">
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; color: #333; font-weight: bold; font-size: 0.9rem;">Answer (If you know it, else leave blank)</label>
+                <textarea id="new-faq-answer" rows="3" placeholder="Write answer here..." style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; color: #111; resize: none;"></textarea>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button id="close-faq-modal-btn" style="padding: 10px 15px; border: none; background: #eef2f6; color: #333; border-radius: 6px; cursor: pointer; font-weight: bold;">Cancel</button>
+                <button id="submit-faq-btn" style="padding: 10px 20px; border: none; background: var(--accent); color: #fff; border-radius: 6px; cursor: pointer; font-weight: bold;">Submit FAQ</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="./auth.js"></script>
+    <script src="./script.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,412 @@
+/* =========================================================
+   HOME PAGE STYLES (home.css)
+   ========================================================= */
+
+/* Base Layout for Home */
+.home-main {
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+/* 1. Hero Search Section */
+.home-hero-search {
+    text-align: center;
+    padding: 60px 20px 80px;
+    position: relative;
+}
+
+.home-hero-icon {
+    width: 50px;
+    height: 50px;
+    margin-bottom: 20px;
+}
+
+.home-hero-title {
+    font-size: 4rem;
+    font-family: "Georgia", serif;
+    color: #fff;
+    margin-bottom: 15px;
+    letter-spacing: -0.02em;
+}
+
+.home-hero-subtitle {
+    font-size: 1.1rem;
+    color: var(--muted-light);
+    margin-bottom: 30px;
+}
+
+.home-hero-stats {
+    font-size: 0.8rem;
+    color: var(--muted-dark);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 40px;
+}
+
+.search-bar-container {
+    max-width: 800px;
+    margin: 0 auto;
+    position: relative;
+    display: flex;
+    align-items: center;
+    background: #091a18;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 999px;
+    padding: 8px 8px 8px 25px;
+    transition: border-color 0.3s;
+}
+
+.search-bar-container:focus-within {
+    border-color: var(--accent);
+}
+
+.search-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-size: 1.1rem;
+    outline: none;
+}
+
+.search-input::placeholder {
+    color: var(--muted-dark);
+}
+
+.search-btn {
+    background: var(--accent);
+    color: #000;
+    border: none;
+    padding: 12px 25px;
+    border-radius: 999px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.search-btn:hover {
+    background: var(--accent-hover);
+}
+
+/* 2. Three-Column Highlight Grid */
+.home-3-col {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 30px;
+    margin-bottom: 60px;
+}
+
+.home-col-card {
+    background: rgba(9, 26, 24, 0.4);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: var(--radius-lg);
+    padding: 30px;
+}
+
+.col-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #fff;
+}
+
+.col-header-icon {
+    color: var(--accent);
+    margin-right: 10px;
+}
+
+.list-item {
+    display: flex;
+    align-items: flex-start;
+    padding: 15px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    transition: background 0.2s;
+}
+
+.list-item:last-child {
+    border-bottom: none;
+}
+
+.list-item:hover {
+    background: rgba(255,255,255,0.02);
+}
+
+.item-number {
+    color: var(--muted-dark);
+    font-weight: 600;
+    min-width: 25px;
+    margin-top: 2px;
+}
+
+.item-content {
+    flex: 1;
+}
+
+.item-title {
+    color: #fff;
+    font-weight: 500;
+    font-size: 0.95rem;
+    margin-bottom: 5px;
+    line-height: 1.4;
+}
+
+.item-meta {
+    font-size: 0.75rem;
+    color: var(--muted-dark);
+}
+
+.item-arrow {
+    color: var(--muted-dark);
+}
+
+.category-link {
+    color: var(--accent);
+    font-size: 0.85rem;
+    display: inline-block;
+    margin-top: 15px;
+}
+
+/* 3. All Categories Section */
+.home-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.home-section-title {
+    font-size: 1.5rem;
+    font-family: "Georgia", serif;
+    color: #fff;
+}
+
+.home-all-categories {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 60px;
+}
+
+.category-row {
+    display: flex;
+    align-items: center;
+    background: rgba(9, 26, 24, 0.4);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: var(--radius-md);
+    padding: 20px 25px;
+    transition: border-color 0.2s, background 0.2s;
+    cursor: pointer;
+}
+
+.category-row:hover {
+    background: rgba(9, 26, 24, 0.6);
+    border-color: rgba(255,255,255,0.1);
+}
+
+.cat-icon {
+    width: 30px;
+    height: 30px;
+    background: rgba(34, 197, 94, 0.1);
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    margin-right: 20px;
+}
+
+.cat-details {
+    flex: 1;
+}
+
+.cat-title {
+    color: #fff;
+    font-weight: 600;
+    font-size: 1.1rem;
+    margin-bottom: 4px;
+}
+
+.cat-count {
+    color: var(--muted-dark);
+    font-size: 0.8rem;
+}
+
+/* 4. Top Solved Today */
+.home-insights-grid {
+    display: grid;
+    grid-template-columns: 3fr 1fr;
+    gap: 30px;
+    margin-bottom: 60px;
+}
+
+.top-solved-cards {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+}
+
+.solved-card {
+    background: rgba(9, 26, 24, 0.4);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: var(--radius-md);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+}
+
+.solved-card-header {
+    font-size: 0.75rem;
+    color: var(--accent);
+    margin-bottom: 10px;
+}
+
+.solved-card-title {
+    color: #fff;
+    font-weight: 600;
+    font-size: 1rem;
+    margin-bottom: 15px;
+    line-height: 1.4;
+    flex: 1;
+}
+
+.solved-card-footer {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    color: var(--muted-dark);
+}
+
+.trending-panel {
+    background: rgba(9, 26, 24, 0.4);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: var(--radius-md);
+    padding: 25px;
+}
+
+.trending-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    font-size: 0.9rem;
+    color: var(--muted-light);
+}
+
+.trending-item:last-child { margin-bottom: 0; }
+
+.status-solved {
+    background: rgba(34, 197, 94, 0.1);
+    color: var(--accent);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+
+/* 5. Zoom Doubts */
+.zoom-doubts-section {
+    margin-bottom: 60px;
+}
+
+.zoom-doubts-title {
+    font-family: "Georgia", serif;
+    font-size: 1.5rem;
+    color: #fff;
+    margin-bottom: 10px;
+}
+
+.zoom-doubts-subtitle {
+    color: var(--muted-light);
+    font-size: 1rem;
+    margin-bottom: 30px;
+}
+
+.zoom-flow {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+}
+
+.flow-step {
+    background: rgba(9, 26, 24, 0.4);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: var(--radius-md);
+    padding: 25px;
+}
+
+.flow-number {
+    width: 30px;
+    height: 30px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    margin-bottom: 15px;
+}
+
+.flow-title {
+    font-size: 1.1rem;
+    color: #fff;
+    margin-bottom: 10px;
+}
+
+.flow-desc {
+    color: var(--muted-dark);
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+/* 6. Still Have A Question */
+.still-question-card {
+    background: rgba(9, 26, 24, 0.6);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: var(--radius-lg);
+    padding: 30px 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 60px;
+}
+
+.still-question-info {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.avatar-stack {
+    width: 60px;
+    height: 60px;
+    background: #fff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.sq-title {
+    font-size: 1.3rem;
+    color: #fff;
+    margin-bottom: 5px;
+}
+
+.sq-subtitle {
+    color: var(--muted-dark);
+    font-size: 0.95rem;
+}
+
+/* Media Queries */
+@media (max-width: 1200px) {
+    .home-3-col { grid-template-columns: 1fr; }
+    .home-insights-grid { grid-template-columns: 1fr; }
+    .top-solved-cards { grid-template-columns: repeat(2, 1fr); }
+    .zoom-flow { grid-template-columns: 1fr; }
+    .still-question-card { flex-direction: column; text-align: center; gap: 20px; }
+}
