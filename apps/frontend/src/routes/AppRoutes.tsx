@@ -43,6 +43,14 @@ const ProgramPortalPage = lazy(() => import('../pages/ProgramPortalPage'));
 const ProgramPage = lazy(() => import('../pages/ProgramPage'));
 
 // Admin pages
+const AdminLogin = lazy(() => import('../admin/pages/AdminLogin'));
+// S3-01 (CRITICAL) fix: lazy-load AdminLogin. Previously the
+// /admin/login route was wired to <Navigate to="/admin" replace />,
+// which redirected to /admin — wrapped in AdminRoute, which
+// redirected non-admins back to /. The result: a logged-out
+// admin could never log in via /admin/login. Now: render AdminLogin
+// at /admin/login. AdminLogin itself handles the "already
+// authenticated as admin" case (navigates to /admin).
 const AdminDashboard = lazy(() => import('../admin/pages/AdminDashboard'));
 const AdminFAQs = lazy(() => import('../admin/pages/AdminFAQs'));
 const AdminUsers = lazy(() => import('../admin/pages/AdminUsers'));
@@ -175,7 +183,7 @@ export default function AppRoutes() {
 
           <Route
             path="/admin/login"
-            element={<RouteElement name="admin-login"><Navigate to="/admin" replace /></RouteElement>}
+            element={<RouteElement name="admin-login"><AdminLogin /></RouteElement>}
           />
           <Route path="/admin" element={<RouteElement name="admin"><AdminRoute><AdminLayout><AdminDashboard /></AdminLayout></AdminRoute></RouteElement>} />
           <Route path="/admin/faqs" element={<RouteElement name="admin-faqs"><AdminRoute><AdminLayout><AdminFAQs /></AdminLayout></AdminRoute></RouteElement>} />
