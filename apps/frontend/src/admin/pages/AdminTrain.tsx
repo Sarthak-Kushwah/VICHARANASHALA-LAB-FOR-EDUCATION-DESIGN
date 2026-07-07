@@ -744,6 +744,18 @@ function BulkDocsPanel({ batchId }: { batchId: string }) {
         {disabled && (
           <span className="ml-3 text-xs text-ink-faint">Pick a program first.</span>
         )}
+        {/*
+          S3-05 (MEDIUM) fix: previously the button was just `disabled` at
+          files.length > 20 with no visible banner. Admins would see the
+          button grey out and not understand why. Now we surface a
+          clear message: the backend caps at 20 per request, so if
+          the user picks more they need to split into batches.
+        */}
+        {files.length > 20 && (
+          <span className="ml-3 text-xs text-warning" data-testid="bulk-docs-truncate-banner">
+            Backend caps at 20 files per request — pick the first 20 and submit again to add more.
+          </span>
+        )}
         {submitting && progressLabel && (
           <span className="ml-3 text-xs text-ink-soft">{progressLabel}</span>
         )}
@@ -872,15 +884,13 @@ function ProgramKnowledgePicker({
 
   const selectedRow = value ? rows.find((r) => r.id === value) : undefined;
   // If we just selected, the row may have left `rows` between fetches.
-  // Look it up from the last successful fetch's value via a ref-lite
-  // pattern: keep the last-known row in local state when selected.
+  // S3-03 (MEDIUM) fix: previously this block was an empty
+  // `if (lastSelected?.id !== selectedRow.id) { /* comment only */ }`
+  // — the developer intended to update a ref synchronously during
+  // render, but React doesn't allow that. The actual update is
+  // already done correctly by the useEffect below; this block
+  // was unreachable dead code. Remove the dead branch.
   const [lastSelected, setLastSelected] = useState<ProgramKnowledgeRow | null>(null);
-  if (value && selectedRow) {
-    // remember on each render
-    if (lastSelected?.id !== selectedRow.id) {
-      // will be set on next render via effect
-    }
-  }
   useEffect(() => {
     if (selectedRow) setLastSelected(selectedRow);
     else if (!value) setLastSelected(null);

@@ -128,7 +128,14 @@ function AdminTicketInner(): React.ReactElement {
     if (!request || spCost === null) return;
     setConvertSending(true);
     try {
-      await adminApi.post(`/csfaq/api/support/requests/${request._id}/convert-to-golden`, { spCost, note: note.trim() });
+      // S3-02 (HIGH) fix: previously this URL was hardcoded to
+      // `/csfaq/api/...`, which bypasses the `adminApi.baseURL` config
+      // and breaks any deploy where the API isn't at `/csfaq/api`.
+      // Match the pattern used by every other admin file that hits
+      // support routes (e.g. ProgramSupportCategoriesTab): relative
+      // path `/support/...`; the adminApi instance prepends the
+      // baseURL.
+      await adminApi.post(`/support/requests/${request._id}/convert-to-golden`, { spCost, note: note.trim() });
       setSpCost(null);
       setNote('');
       await load();
