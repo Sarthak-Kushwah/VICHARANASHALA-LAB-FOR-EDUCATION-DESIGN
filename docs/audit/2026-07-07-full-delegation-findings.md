@@ -492,12 +492,101 @@ Severity scale:
 
 ### Subagent 2 Summary
 - CRITICAL: 0
-- HIGH: 3 (H2-1 createPost tags schema, H2-2 CommentNode rollback typo, H2-3 ThreadBookmarkButton stateless regression risk)
-- MEDIUM: 5 (M2-1 bookmark ObjectId, M2-2 notification ObjectId, M2-3 notification pagination, M2-4 askai abort, M2-5 anon rate-limit mismatch)
-- LOW: 3 (L2-1 tag UI counter, L2-2 notificationBell persist, L2-3 passwordCard toast)
-- **TOTAL: 11 findings** (1 verification-only — H6 server-side FIX confirmed)
+- HIGH: 3 (H2-1 createPost tags schema, H2-2 CommentNode rollback typo, H2-3 ThreadBookmarkButton stateless regression risk) + **S2-1 anon AI limit server-bypass** (judge-merged from async delivery)
+- MEDIUM: 5 (M2-1..M2-5) + **S2-2 createPost trim, S2-3 ai_moderator role drift, S2-4 bookmarks redirect, S2-6 resolve RBAC gap** (judge-merged from async delivery)
+- LOW: 3 (L2-1..L2-3) + **S2-5 FeatureGate race, S2-7 notification double-fetch, S2-8 ProfileCard reload, S2-9 community search pagination, S2-10 safeHref XSS** (judge-merged from async delivery)
+- **TOTAL: 21 findings (11 inline-applied + 10 from official async delivery, of which 2 sharpen inline entries and 8 are net-new)**
 
-**Prior-audit status:** H6 (CreatePostDialog no server-auth) is now FIXED end-to-end on the server. H7 (useAuth logic inversion) and H8 (logout cleanup) — pending re-check but assumed fixed per the prior run. H11 (CommentNode upvote rollback) — there's a NEW bug in the fix itself (`previousUpvote` typo). H12 (ThreadDetail bookmark rollback) — FIXED on ThreadDetail but stateless button delegates risk to other consumers.
+### Subagent 2 — Additional findings (from async delivery, judge-spliced)
+
+### S2-1 — Anon AI usage limit (5/day) is purely client-side; server does NOT enforce it
+- **File(s):** `apps/frontend/src/components/askai/AskAIButton.tsx:8-31` (`ANON_AI_LIMIT`, `readAnonCount`, `bumpAnonCount`); counter stored in `localStorage` keys `yaksha_anon_ai_count` / `yaksha_anon_ai_reset`.
+- **Severity:** HIGH
+- **Category:** RBAC
+- **Bug:** The 5/day anon-AI quota is a UX gate only. A user can bypass it by clearing `localStorage` (DevTools, incognito, another browser) or by directly POSTing to `/api/ask-ai` from the network panel — there's no server-side tracker keyed on IP, fingerprint, or session-before-signin. Guest users can drive unlimited Ask-AI calls (each triggers external LLM cost). **Sharper version of inline M2-5.**
+- **Evidence:** `if (!isAuthenticated && readAnonCount() >= ANON_AI_LIMIT) { openModal('signin'); return; }` — purely client-side check.
+- **Fix:** Add a server-side anon counter in `askai.routes.ts` (or middleware that mints a short-lived anon cookie and buckets by `(ip, ua)`). Frontend remains a courtesy UI hint, server is authoritative.
+- **Verification:** `curl -X POST /api/ask-ai -d '{"question":"..."}' --n=10` should return 429 after the 5th hit from a single IP-within-24h even with cleared cookies.
+
+### S2-2 — `createPost` backend accepts whitespace-only `title`/`body`; frontend rejects `.trim()`, creating silent inconsistency
+- **File(s):** `apps/backend/src/modules/community/post-mutations.controller.ts:63-66`; `apps/frontend/src/components/community/CreatePostDialog.tsx:257-264`.
+- **Severity:** MEDIUM
+- **Category:** Validation
+- **Bug:** Server validates only `if (!title || !body)` (truthy check). A payload `title: '   '` passes the gate because the non-empty whitespace string is truthy. Frontend dialog rejects this with `'Both title and description are required.'` after `.trim()`. A non-dialog caller (e.g. crafted request, an admin tool, or a future mobile client) can land a whitespace-only post in the DB; the post then renders blank in feeds.
+- **Evidence:** `if (!title || !body) { res.status(400)... }` — no `.trim()` on server.
+- **Fix:** Server `createPost`: `if (!title?.trim() || !body?.trim()) { res.status(400) ... }`. Mirror the frontend contract.
+- **Verification:** `curl -X POST /api/community -H "Authorization: Bearer ..." -d '{"title":"   ","body":"\n\t\n"}'` → 400.
+
+### S2-3 — `AccountPage` `isUploadAuthorized` gate omits `ai_moderator`; backend `authorize()` middleware includes it — design-system drift
+- **File(s):** `apps/frontend/src/pages/AccountPage.tsx:38`; pattern repeats at `ThreadDetail.tsx:122-123`, `CommentNode.tsx:81,370,348`, `Navbar.tsx`, `NotificationBell.tsx:122`.
+- **Severity:** MEDIUM
+- **Category:** RBAC
+- **Bug:** `redesign-plan.md` §2.1 flags that the frontend admin route guard excludes `ai_moderator`, while the backend `authorize()` middleware includes it (`middleware/authShared.ts:164-173` accepts any role list). Concretely: an `ai_moderator` user hitting `/account` sees neither the Zoom Integration card (line 310) nor the Document Upload card (line 546). The server-side `document.controller.ts` they hit would also 403 them out. The frontend ought to either include `ai_moderator` in `isUploadAuthorized` and the Zoom gate, or document why this is admin-only.
+- **Fix:** Extend the helper to a shared `canAccessAdminTools(role)` predicate in `utils/role.ts` that returns true for `admin`, `moderator`, **and** `ai_moderator`; use it everywhere.
+- **Verification:** Log in as an `ai_moderator`, navigate to `/account`; should see both cards. Backend `GET /api/documents/upload` then succeeds.
+
+### S2-4 — `SavedKnowledgePage` redirects unauthenticated users to `/` without preserving the entry URL
+- **File(s):** `apps/frontend/src/pages/SavedKnowledgePage.tsx:21-25`.
+- **Severity:** MEDIUM
+- **Category:** UX
+- **Bug:** Direct-link to `/csfaq/bookmarks` while logged out → `useEffect` runs `navigate('/', { replace: true })` and the user lands on home with no breadcrumb. The user has to search "saved" again after sign-in. Same pattern as L3 (GoldenTicketPage back button) and H4 (guest gate) — missed sibling case.
+- **Fix:** `navigate('/', { state: { from: '/bookmarks' }, replace: true })`; surface a "Sign in to view your bookmarks" toast on home if `location.state?.from === '/bookmarks'` and user is now authenticated.
+- **Verification:** Log out, visit `/csfaq/bookmarks`, sign in via the modal — should land back on `/csfaq/bookmarks`.
+
+### S2-5 — `FeatureGate` `requiredRoles` is enforced at the page level but children may have already rendered and made API calls before the gate's redirect
+- **File(s):** `apps/frontend/src/components/support/FeatureGate.tsx:108-110`; consumers: `AppRoutes.tsx` FeatureGate wrappers.
+- **Severity:** LOW
+- **Category:** RBAC (defense-in-depth)
+- **Bug:** `FeatureGate` correctly refuses to render children when `requiredRoles` excludes the user's role, but children components (`ProfileCard`, `PasswordCard`, `NotificationBell`, `AskAIButton`, page bodies) all `useEffect`-fetch on mount. By the time React commits the disabled-panel render instead, those fetches may already be in flight. The `api.ts` 401-interceptor catches unauthenticated calls, but a guest who bypasses the auth modal can still see the data flash before the gate commits.
+- **Fix:** Either (a) gate at the route level so children never mount (`/admin/*`-style guard reversed for non-admin-only features), or (b) have each FeatureGate consumer lazy-import its data hooks so the gate decides before any fetch starts.
+- **Verification:** Set user role to `guest` with `localStorage` injection, hit a role-gated page; confirm no network request fires for role-gated data.
+
+### S2-6 — `ThreadDetail` "Resolve" button uses `canResolve = admin||moderator||expert`; backend `POST /community/:id/resolve` accepts ANY authenticated user (RBAC GAP)
+- **File(s):** `apps/frontend/src/components/community/ThreadDetail.tsx:122-123`; `apps/backend/src/modules/community/community.routes.ts:83` (`patch('/:id/resolve', protect, validateBody(resolvePostSchema), resolvePost)` — no `authorize(...)` middleware).
+- **Severity:** MEDIUM → **HIGH** (escalated by judge — this is a real RBAC gap that mirrors the H6 pattern)
+- **Category:** RBAC
+- **Bug:** The frontend restricts the resolve-form button to admin/moderator/expert, but the backend `resolvePost` controller only requires a valid token (`protect`). A regular `user` who crafts a PATCH with `{"answer":"..."}` resolves any post in their program — including posts they didn't author. **This is the same bug pattern as the prior H6 — client-only gate without server enforcement.** `acceptCommentAnswer` likely has the same gap.
+- **Evidence:** `resolvePost` has no `authorize(...)` middleware on the route.
+- **Fix:** Tighten `POST /api/community/:id/resolve` to `protect, authorize('admin','moderator','expert')`. Or if the design is "any user can resolve their own thread", then the controller must verify `post.author === req.user._id` OR user is privileged.
+- **Verification:** As a `user`, `curl -X PATCH /api/community/<id>/resolve -H "Authorization: Bearer ..." -d '{"answer":"hijacked"}'` should 403.
+
+### S2-7 — `NotificationBell` polling uses a 30s interval; `unread-count` ALSO fires on `window.focus` — duplicate-fetch race
+- **File(s):** `apps/frontend/src/hooks/useNotifications.tsx:68-72`; `apps/frontend/src/components/notifications/NotificationBell.tsx:81-85`.
+- **Severity:** LOW
+- **Category:** Race
+- **Bug:** `fetchUnreadCount` fires every 30s AND on every `window.focus`. If focus fires within 100ms of the interval's tick, two parallel `GET /notifications/unread-count` requests fire. Both cached via api.ts TTL=10s so users can't tell — but the SSE/Network tab shows duplicate requests and the count-stale UX is reset on whichever returns first. **Adjacent to inline L2-2 but a different race window.**
+- **Fix:** Stash `lastFetchedAt` in a ref, skip if delta < 5s. Or: replace both with a single Visibility API observer.
+- **Verification:** DevTools network tab — record 5 events of opening the bell twice within 5s; only one `/unread-count` call should fire.
+
+### S2-8 — `ProfileCard.handleAvatarFile` mutates localStorage then calls `window.location.reload()` — loses any in-flight API state
+- **File(s):** `apps/frontend/src/components/account/ProfileCard.tsx:59-60, 81-82, 105-106`.
+- **Severity:** LOW
+- **Category:** UX
+- **Bug:** Avatar upload, avatar remove, and profile save all do `setTimeout(() => window.location.reload(), 600/800)` to refresh the navbar. This throws away any unsaved form state elsewhere on the page, breaks back-button history, and forces a full page reload (incl. re-auth fetch). A diff-update of `setUser(...)` from `useAuth` would be cleaner.
+- **Fix:** `useAuth` already has a `fetchUser()` method — call it after success and merge the new avatar/name into the in-memory `user` state. No reload needed.
+- **Verification:** Change avatar → navbar avatar should reflect immediately without a full page refresh; back button still works.
+
+### S2-9 — `CommunityPage` semantic-search results lack pagination guard; backend returns top-N with no `hasMore`
+- **File(s):** `apps/frontend/src/pages/CommunityPage.tsx:159-172`; `searchCommunityPosts` controller.
+- **Severity:** LOW
+- **Category:** Performance / UX
+- **Bug:** `runSemanticSearch` page-loads `/community/search?q=...&batchId=...`, dumps into `searchResults`, and replaces the paginated `posts` view. The semantic-search controller returns a hardcoded top-N with no cursor — user sees "30 results" instead of all matches.
+- **Fix:** Add `&limit=&cursor=` support to `/community/search` mirroring `/community`. Frontend uses an infinite-scroll sentinel like the main feed.
+- **Verification:** Search "leave" in a populated DB; expect to be able to scroll past 20.
+
+### S2-10 — `AskAIButton` source-row links use `onNav(s.href)` with no scheme/origin check before `navigate()`
+- **File(s):** `apps/frontend/src/components/askai/AskAIButton.tsx:64-83, 298` (`SourceRow`, `handleSourceNav`).
+- **Severity:** LOW
+- **Category:** Security (defense-in-depth)
+- **Bug:** Each source row has `s.href` provided by the backend (`askai.controller.ts`). `handleSourceNav` does `navigate(href)` with no scheme allowlist. If a malicious post ever injects `href: 'javascript:alert(1)'` (or even a redirector off-site), `react-router-dom` `navigate()` is generally safe, but `s.href` should still be validated against an allowlist (`^/(csfaq)?/`).
+- **Fix:** Add a small `safeHref = (href: string) => /^[/](?!.*:\/\/).*/.test(href) ? href : '#'` guard before `navigate()`.
+- **Verification:** Inject `s.href: 'javascript:alert(1)'` into a mocked response — the click should not execute the script.
+
+### Subagent 2 — Out of scope (from async delivery)
+- `community/SpillTheTea.tsx`, `CommunityHealth.tsx`, `ThreadActivityTimeline.tsx`, `CommunityPostCard.tsx` — recommend a focused review pass.
+- `support/ContextFieldsDisplay.tsx`, `DynamicFieldInput.tsx`, `GoldenHistorySection.tsx`, `types.ts`, `icons.tsx`, **`api.ts`** — frontend support module has its own `api.ts` that may bypass `apps/frontend/src/utils/api.ts` interceptor contract. **Verify the support-module axios instance also wires up `auth:logout` + 401 refresh** — this is the next-biggest frontend risk for this subagent's scope.
+
+**Prior-audit status:** H6 (CreatePostDialog no server-auth) is now FIXED end-to-end on the server. H7 (useAuth logic inversion) and H8 (logout cleanup) — pending re-check but assumed fixed per the prior run. H11 (CommentNode upvote rollback) — there's a NEW bug in the fix itself (`previousUpvote` typo — see H2-2). H12 (ThreadDetail bookmark rollback) — FIXED on ThreadDetail but stateless button delegates risk to other consumers (see H2-3).
 
 <!-- ============================================ -->
 <!-- SUBAGENT 3: frontend-admin -->
@@ -1692,14 +1781,14 @@ Findings 5.9 (M4-3 cross-cutting), 5.6 (same anti-pattern as Subagent 4 M4-1/4-2
 
 ## Consolidated Summary (filled by judge)
 
-### Counts
+### Counts (updated 2026-07-07 11:30 after async Subagent 2 delivery landed)
 | Severity | Subagent 1 | Subagent 2 | Subagent 3 | Subagent 4 | Subagent 5 | TOTAL |
 |---|---|---|---|---|---|---|
 | CRITICAL | 0 | 0 | 1 (S3-01 AdminLogin routing broken) | 0 | 1 (5.1 suspendUserSchema broken) | **2** |
-| HIGH     | 1 | 3 (H2-1, H2-2, H2-3) | 1 (S3-02) | 2 (H4-1, H4-2) | 4 (5.2, 5.3, 5.10, 5.14) | **11** |
-| MEDIUM   | 4 | 5 | 5 | 5 | 9 | **28** |
-| LOW      | 6 | 3 | 5 | 6 | 10 | **30** |
-| **TOTAL** | **11** | **11** | **12** | **13** | **24** | **71** |
+| HIGH     | 1 | 4 (H2-1, H2-2, H2-3, S2-1) | 1 (S3-02) | 2 (H4-1, H4-2) | 4 (5.2, 5.3, 5.10, 5.14) | **12** |
+| MEDIUM   | 4 | 9 (M2-1..M2-5 + S2-2, S2-3, S2-4, **S2-6 escalated HIGH**) | 5 | 5 | 9 | **32** |
+| LOW      | 6 | 8 (L2-1..L2-3 + S2-5, S2-7, S2-8, S2-9, S2-10) | 5 | 6 | 10 | **35** |
+| **TOTAL** | **11** | **21** | **12** | **13** | **24** | **81** |
 
 ### Top 10 priorities (judge-curated)
 
@@ -1715,15 +1804,17 @@ These are ordered by severity × blast radius. Fixes 1-3 are unblockers; fixes 4
 
 5. **5.10 (HIGH) — `askOrientationQuestion` stdout credential leak** (`apps/backend/src/modules/program/welcome.controller.ts:askOrientationQuestion` per subagent 5): constructs a new OpenAI SDK per request, logs `GROK/GROQ loaded: !!apiKey` to stdout. Per-request SDK cost + key presence in logs is a credential-leak surface. **Severity: PII/key in logs.**
 
-6. **5.3 + H5-3 (HIGH) — autoAnswer cooldown gate logic** (`apps/backend/src/services/autoAnswer.ts:readPriorResult`): two reports in agreement — `escalated` is mapped to `ask_human` decision, AND the function never inspects `aiAnswerReviewedAt`/`By`, so an admin "ask-ai-again" within the cooldown window silently returns the cached answer with no log line. Subagent 5's version is sharper. **Severity: admin re-runs produce no work, no observability.**
+6. **S2-6 (HIGH) — `POST /community/:id/resolve` accepts ANY authenticated user (RBAC gap, client-only gate)** (`apps/backend/src/modules/community/community.routes.ts:83`): the frontend restricts the "Resolve" button to admin/moderator/expert, but the backend route has only `protect` middleware — no `authorize(...)`. A regular `user` who crafts a PATCH with `{"answer":"..."}` resolves any post in their program, including posts they didn't author. **Same bug pattern as the original H6 (CreatePostDialog no server-auth)** — client-only gate, missing server enforcement. Fix: tighten route to `protect, authorize('admin','moderator','expert')`. Async delivery added this finding 2026-07-07 11:30.
 
-7. **5.14 (HIGH) — Reputation `awardPoints` dual-write partial** (`apps/backend/src/modules/moderation/reputation.controller.ts:awardPoints`): updates `User.points` globally THEN calls `awardToUser` (per-program write). If per-program write throws, the global already moved. **Severity: user reputation inconsistency, unfixable without a rollback.**
+7. **5.3 + H5-3 (HIGH) — autoAnswer cooldown gate logic** (`apps/backend/src/services/autoAnswer.ts:readPriorResult`): two reports in agreement — `escalated` is mapped to `ask_human` decision, AND the function never inspects `aiAnswerReviewedAt`/`By`, so an admin "ask-ai-again" within the cooldown window silently returns the cached answer with no log line. Subagent 5's version is sharper. **Severity: admin re-runs produce no work, no observability.**
 
-8. **H4-1 + H4-2 (HIGH) — `POST /auth/refresh` no rate limit + no Zod** (`apps/backend/src/modules/auth/auth.controller.ts:622-681`): the refresh endpoint is the natural brute-force target and has neither. Length is unbounded — 10MB strings hit `JWT.verify`. **Severity: token-reuse surface + memory pressure.**
+8. **5.14 (HIGH) — Reputation `awardPoints` dual-write partial** (`apps/backend/src/modules/moderation/reputation.controller.ts:awardPoints`): updates `User.points` globally THEN calls `awardToUser` (per-program write). If per-program write throws, the global already moved. **Severity: user reputation inconsistency, unfixable without a rollback.**
 
-9. **S1 + Subagent 1.1 (HIGH) — `SpurtiChip` uses `user?.id` instead of `user?._id`** (`apps/frontend/src/components/.../SpurtiChip.tsx` per subagent 1): breaks Spurti Points UI for every authenticated user. One-character fix but high blast-radius (GuidedTour + GoldenTicket features both depend on it). **Severity: full feature broken.**
+9. **H4-1 + H4-2 (HIGH) — `POST /auth/refresh` no rate limit + no Zod** (`apps/backend/src/modules/auth/auth.controller.ts:622-681`): the refresh endpoint is the natural brute-force target and has neither. Length is unbounded — 10MB strings hit `JWT.verify`. **Severity: token-reuse surface + memory pressure.**
 
-10. **H2-3 + ThreadBookmarkButton regression risk (HIGH)** (`apps/frontend/src/components/community/ThreadBookmarkButton.tsx`): the button is now stateless. Any other consumer (e.g. `PostDetailDialog`, `SavedKnowledgePage`) that re-introduces a stale-closure rollback pattern resurrects the H12 bug class. **Severity: latent regression class on H12 fix.**
+10. **S1 + Subagent 1.1 (HIGH) — `SpurtiChip` uses `user?.id` instead of `user?._id`** (`apps/frontend/src/components/.../SpurtiChip.tsx` per subagent 1): breaks Spurti Points UI for every authenticated user. One-character fix but high blast-radius (GuidedTour + GoldenTicket features both depend on it). **Severity: full feature broken.**
+
+11. **H2-3 + ThreadBookmarkButton regression risk (HIGH)** (`apps/frontend/src/components/community/ThreadBookmarkButton.tsx`): the button is now stateless. Any other consumer (e.g. `PostDetailDialog`, `SavedKnowledgePage`) that re-introduces a stale-closure rollback pattern resurrects the H12 bug class. **Severity: latent regression class on H12 fix.**
 
 ### Cross-cutting patterns observed (judge-curated)
 
