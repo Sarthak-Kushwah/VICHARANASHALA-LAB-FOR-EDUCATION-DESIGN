@@ -22,7 +22,8 @@ export type AIFeature =
   | 'duplicateDetection'
   | 'knowledgeExtraction'
   | 'searchSummarization'
-  | 'faqGeneration';
+  | 'faqGeneration'
+  | 'translation';
 
 export type AIProvider =
   | 'anthropic' | 'openai' | 'xai' | 'minimax' | 'gemini' | 'custom';
@@ -46,6 +47,7 @@ const FEATURE_ENABLED_DEFAULTS: Record<AIFeature, boolean> = {
   faqGeneration: true,
   knowledgeExtraction: true,
   searchSummarization: true,
+  translation: true,
 };
 
 class AIProviderResolverService {

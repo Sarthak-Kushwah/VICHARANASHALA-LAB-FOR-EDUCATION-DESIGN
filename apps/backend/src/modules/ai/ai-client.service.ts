@@ -97,7 +97,8 @@ export type AIFeature =
   | 'duplicateDetection'
   | 'knowledgeExtraction'
   | 'searchSummarization'
-  | 'faqGeneration';
+  | 'faqGeneration'
+  | 'translation';
 
 export interface AIResult {
   content: string;
@@ -269,6 +270,55 @@ export class AiClient {
           tokensUsed: 100,
           estimatedCost: 0,
         };
+      }
+      if (feature === 'translation') {
+        const userMsg = messages.find(m => m.role === 'user')?.content || '';
+        // If it looks like we are translating search results
+        if (userMsg.includes('JSON array') || userMsg.includes('Translate the text values')) {
+          try {
+            const match = userMsg.match(/\[\s*\{.*\}\s*\]/s);
+            if (match) {
+              return {
+                content: match[0],
+                provider: 'openai',
+                modelName: 'gpt-4o',
+                tokensUsed: 100,
+                estimatedCost: 0,
+              };
+            }
+          } catch (e) {}
+          return {
+            content: '[]',
+            provider: 'openai',
+            modelName: 'gpt-4o',
+            tokensUsed: 100,
+            estimatedCost: 0,
+          };
+        } else {
+          // It's query translation.
+          const queryMatch = userMsg.match(/Query:\s*"(.*)"/s);
+          const originalQuery = queryMatch ? queryMatch[1] : userMsg;
+
+          let detectedLanguage = 'Spanish';
+          let languageCode = 'es';
+          let translatedQuery = 'translated query';
+          if (userMsg.toLowerCase().includes('hello') || userMsg.toLowerCase().includes('how do i')) {
+            detectedLanguage = 'English';
+            languageCode = 'en';
+            translatedQuery = originalQuery;
+          }
+          return {
+            content: JSON.stringify({
+              detectedLanguage,
+              languageCode,
+              translatedQuery
+            }),
+            provider: 'openai',
+            modelName: 'gpt-4o',
+            tokensUsed: 50,
+            estimatedCost: 0,
+          };
+        }
       }
       return {
         content: 'This is a mock AI response for testing.',
